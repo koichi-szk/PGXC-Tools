@@ -1,0 +1,1295 @@
+#!/bin/bash
+#
+# Shell tool to run pgxc in multi-server environment
+#
+#---------------------------------------------------
+#
+# Copyright (c) 2012, Postgres-XC Development Group
+#
+# Permission to use, copy, modify, and distribute this software and its
+# documentation for any purpose, without fee, and without a written agreement
+# is hereby granted, provided that the above copyright notice and this
+# paragraph and the following two paragraphs appear in all copies.
+#
+# IN NO EVENT SHALL POSTGRES-XC DEVELOPMENT GROUP BE LIABLE TO ANY
+# PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
+# DAMAGES, INCLUDING LOST PROFITS, ARISING OUT OF THE USE OF THIS
+# SOFTWARE AND ITS DOCUMENTATION, EVEN IF POSTGRES-XC DEVELOPMENT
+# GROUP HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# POSTGRES-XC DEVELOPMENT GROUP SPECIFICALLY DISCLAIMS ANY WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS
+# ON AN "AS IS" BASIS, AND THE POSTGRES-XC DEVELOPMENT GROUP HAS NO OBLIGATIONS TO
+# PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+# 
+#===================================================
+#
+# Configuration
+#
+# You can specify the following configuration parameters.
+#
+# The following is assumed:
+# 1. Need separate srever for GTM.   You may configure GTM in one of
+#    the following servers, however, you must assign unique port
+#    number to GTM which does not conflict with other components.
+# 2. All the other servers will be configured with coordinator,
+#    datanode and gtm_proxy.
+# 3. All the coordinators, datanodes and gtm_proxies are assigned the
+#    same working directories respectively.
+# 4. All the coordinators and datanodes are assigned the same set of
+#    listening ports and listening addresses respectively.
+# 5. It is assumed that all the XC resources (incluing binaries and
+#    libraries) are owned by specific user (Postgres-XC owner)
+#
+#==================================================
+#
+# Before you use this
+#
+# You should configure your own Postgres-XC cluster based on the above
+# assumption.   Configuration will be found at the first block of this
+# script.   Edit these lines as you widh, but please do not touch the
+# other part unless you're trying to improve this tool.
+#
+# This tool uses ssh so often.   To avoid to type password, it is highly
+# advised to use key-based ssh authentication.
+#
+#==================================================
+#
+# Typical steps (first to do)
+#
+# If you're in a hurry, skip this section and read the next one for
+# convenient shortcut.
+#
+# 1. Build Postgres-XC binaries using configure, make and
+#    make install.
+# 2. Edit configuration part of this file.
+# 3. pgxc deploy
+# 4. pgxc set bashrc # if you'd like to set your PATH and LD_LIBRARY_PATH
+# 5. pgxc clean
+# 6. pgxc init
+# 7. pgxc start
+# 8. pgxc set node
+# 9. Do what you'd like
+# 10. pgxc stop
+#
+#=================================================
+#
+# If you're in a hurry
+#
+# Just type
+# $ pgxc go
+#
+# pgxc utility will do every step from the scratch to begin your Postgres-XC
+# deployment, initialization and configuration.   You will be prompted if
+# you'd like to setup PATH and LD_LIBRARY_PATH for each server's environment.
+# Please respond y or n.
+# When the configuration is complete, pgxc will print the configuration of
+# your Postgres-XC cluster.
+# Postgres-XC cluster is running.   Please type
+# $ pgxc stop
+# to stop Postgres-XC cluster.
+#
+#==================================================
+#
+# After you've done
+#
+# If you've done the above, then you can start and stop Postgres-XC as follows:
+#
+# 1. pgxc start # starts Postgres-XC components.
+# 2. pgxc stop  # stops Postgres-XC components.
+#
+#==================================================
+#
+# How to use
+#
+# This section describes more detailed set of pgxc commands.   You may not
+# need to use all of them usually.
+#
+# 1. Place "pgxc" script to one of your $PATH.
+#
+# 2. command like is:
+#    $ pgxc <option> pgxc_command <command option> ...
+#
+#   Now <option> is only for -v or --verbose which causes many more messages
+#   displayed.
+#
+# 3. pgxc_command is one of the following:
+#
+#   0) go
+#      This command does everything you need to deploy, initialize, configure and start
+#      your Postgres-XC cluster.   You will be prompted if you'd like to setup PATH and
+#      LD_LIBRARY_PATH in .bashrc at each target server.   Just type as follows:
+#      $ pgxc go
+#
+#	1) deploy 
+#      This command installs build materials to destinations.  We assume you've locally 
+#      built Postgres-XC binaries and installed them to the same directory as the 
+#      destination.   You should specify this as the variable pgxcInstallDir.
+#      Typical wal to install binaries locally is as follows:
+#      $ cd postgres-xc_source_directory
+#      $ ./configure --prefix=$pgxcInstallDir ....
+#      $ make
+#      $ make install
+#      Please note that all the materials should be owned by the user $pgxcOwner, as
+#      found in this script.
+#      Deploy can have more option.   So pgxc deploy command can be as follows:
+#      $ pgxc deploy          # Install to all the nodes
+#      $ pgxc deploy all      # Install to all the nodes
+#      $ pgxc deploy nodename # Install only to specified node
+#
+#   2) clean
+#      This command cleans up working directory of specified nodes.   At present,
+#      this command cleans up specified component on all the nodes and does not provide means to
+#      clean up individual node.
+#      The command can be:
+#      $ pgxc clean                 # cleans up everything in every node
+#      $ pgxc clean all             # cleans up everything in every node
+#      $ pgxc clean gtm             # cleans up only gtm materials
+#      $ pgxc clean normal          # cleans up both coordinator and datanode materials
+#                                   # on all the nodes.
+#
+#  3) init
+#     This command initializes each component.  Command forms will be:
+#     $ pgxc init                   # Initializes everying
+#     $ pgxc init all 				# (same as above)
+#     $ pgxc init gtm               # Initializes GTM
+#     $ pgxc init gtm_proxy			# Initializes GTM Proxy
+#     $ pgxc init node              # Initializes coordinator and datanode
+#
+#  4) set
+#     This command sets up the following:
+#     $ pgxc set bashrc				# Setup all the node's .bashrc file
+#                                   # to update $PATH and $LD_LIBRARY_PATH
+#     $ pgxc set node				# Registers all the nodes to all the nodes.
+#                                   # You should start all the components before
+#                                   # you invoke this command.
+#
+#  5) show
+#     This command shows pgxc command settings.   At present, only configure option
+#     is allowed, which shows your Postgres-XC cluster configuration.
+#     $ pgxc show configuration		# Prints your Postgres-XC cluster configuration.
+#
+#  6) start
+#     Starts Postgres-XC components.  You can specify all, gtm, gtm_proxy, coordinator,
+#     datanode, or node as follows:
+#     $ pgxc start					# Starts every component
+#     $ pgxc start all				# same as above
+#     $ pgxc start gtm				# starts only gtm
+#     $ pgxc start gtm_proxy		# starts gtm_proxy.  you should start gtm in advance.
+#     $ pgxc start coordinator		# starts coordinators.
+#     $ pgxc start datanode			# starts datanodes.
+#     $ pgxc start node				# starts coordinators and datanodes
+#
+#  7) stop
+#     Stops Postgres-XC components.   You can specify all, gtm, gtm_proxy, coordinator,
+#     datanode, or node as follows:
+#     $ pgxc stop  <stop_optn>		# stops every component.
+#     $ pgxc stop gtm 				# stops gtm
+#     $ pgxc stop gtm_proxy			# stops gtm_proxy
+#     $ pgxc stop coordinator <stop_opt>	# stops coordinators.
+#     $ pgxc stop datanode <stop_opt>		# stops datanodes
+#     $ pgxc stop node <stop_opt>	# stops coordinators and datanodes
+#     <stop_opt> specifies -m option value for pg_ctl stop.   You can specify
+#     immeidate, fast or normal for this option.
+#
+#  8) kill
+#     Kills specified Postgres-XC components.
+#     $ pgxc kill					# kills all the component processes
+#     $ pgxc kill gtm				# kills gtm
+#     $ pgxc kill gtm_proxy			# kills gtm_proxy
+#     $ pgxc kill node				# kills datanode and coordinator
+#     This command should be used only when you cannot stop some components.
+#     Kill will be done by killall -u option.   If you're running the same
+#     binary, they will also be killed.
+#
+#========================================================================
+
+#========================================================================
+#
+#            Configuration Section
+#
+# You can edit this section to configure your Postgres-XC cluster
+#
+#
+#------------ OVERALL ---------------------------------
+
+pgxcOwner=koichi			# Owner of the Postgres-XC clusetr.
+							# for simplicity, the owner should be the same
+							# across all the servers.   Here, only the owner
+							# name is checked.   In Linux/Unix, you don't
+							# have to assign the same userid/groupid for
+							# this owner.
+
+pgxcInstallDir=$HOME/pgxc		# In this tool, pgxc installation will be targetted
+							# to the same directory as local build directory.
+							# All the built materials will be installed in the
+							# same directory on all servers.
+
+tmpDir=/tmp					# Temporary director used to store temporary files.
+							# You may want to use a directory local to $pgxcOwner.
+
+#----------- GTM --------------------------------------
+
+gtmServer=node13			# Server name or IP address where GTM is 
+							# configured.
+
+gtmPort=20001				# Port number which GTM listens to.
+
+gtmName=gtm					# gtm node name
+
+gtmdir=$HOME/pgxc/nodes/gtm	# GTM working directory
+
+#---------- Other servers (Coordinator/Datanode/GTM-Proxy) ---------------------
+
+normalServer=(node01 node02 node03 node04)	# Array of server name or server
+							# IP address where coordinators and datanodes are
+							# configured.
+
+
+#--------- Coordinators ------------------------------------
+
+coordnames=(coord1 coord2 coord3 coord4)	# Array of coordinator name
+
+coordPort=20004				# Port number for coordinators.
+
+poolerPort=20010			# Port number for the pooler in coordinators.
+
+coorddir=$HOME/pgxc/nodes/coord			# Coordinator working directory
+
+coord_listen_address=(192.168.1.0/24 192.168.2.0/24)	# Array of
+							# IP address and mask accepted by coordinators.
+							# This will be stored in coordinator's pg_hba.conf
+
+#--------- Datanodes -------------------------------------
+
+datanodenames=(datanode1 datanode2 datanode3 datanode4)	# Array of
+							# datanode name
+
+datanodePort=20006			# Port number for datanodes
+
+datanodedir=$HOME/pgxc/nodes/datanode	# Datanode working directory
+
+datanode_listen_address=(192.168.1.0/24)				# Array of
+							# IP address and mask accepted by datanodes.
+							# This will be stored in datanode's pg_hba.conf
+
+#-------- GTM Proxies ----------------------------------
+
+gtmPxyNames=(gtmpxy1 gtmpxy2 gtmpxy3 gtmpxy4)
+
+gtmProxyPort=20001			# Port number which GTM-Proxies listen to
+
+gtmproxydir=$HOME/pgxc/nodes/gtm_proxy	# GTM_Proxy working directory
+
+#
+#              End of Configuration Section
+#
+# You should not touch the following section unless you are improving this tool.
+#
+#=======================================================================
+
+
+########################################################################
+#
+# PGXC tool main part
+#
+########################################################################
+
+#---------------------------------------------
+# Other variables
+#---------------------------------------------
+verbose=n
+
+allSever=$normalServer		# Just for work.  Don't touch this.
+
+#---------------------------------------------
+# Common filename suffix
+#---------------------------------------------
+
+datetime=`date +%y%m%d_%H%M`
+immediate="-m fast"			# option for pg_ctl stop.
+
+echo '****** pgxc test tool start. ' `date '+%Y.%m.%d_%k.%M.%S'`  ' *********'
+
+#----------------------------------------------
+# DEBUG Aid
+#----------------------------------------------
+
+DEBUG=n
+
+function funcname
+{
+	if [ $DEBUG == y ]
+	then
+		echo '******** ' "$1() called" ' **********'
+	fi
+}
+
+#==================================================
+#
+# Print Configuration information
+#
+#==================================================
+
+function printConfig
+{
+	echo "== Postgres-XC configuration ========="
+	echo Postgres-XC owner: $pgxcOwner
+	echo Postgres-XC build directory: $pgxcInstallDir
+	echo "---------------------"
+	echo All the Servers: "(" ${allServer[@]} ")"
+	echo "---------------------"
+	echo GTM server: $gtmServer, gtmPort: $gtmPort, gtmdir: $gtmdir
+	echo GTM directory: $gtmdir
+	echo GTM port: $gtmPort
+	echo "---------------------"
+	echo Servers: "(" ${normalServer[@]} ")"
+	echo '--'
+	echo Coordinator nodenames: "(" ${coordnames[@]} ")"
+	echo Coordinator directory: $coorddir
+	echo Coordinator port: $coordPort
+	echo Pooler port: $poolerPort
+	echo Coordinator Listen Address: "(" ${coord_listen_address[@]} ")"
+	echo '--'
+	echo Datanode nodenames: "(" ${datanodenames[@]} ")"
+	echo Datanode directory: $datanodedir
+	echo Datanode port: $datanodePort
+	echo Datanode Listen Address: "(" ${datanode_listen_address[@]} ")"
+	echo '--'
+	echo GTM proxy nodenames: "(" ${gtmPxyNames[@]} ")"
+	echo GTM proxy directory: $gtmproxydir
+	echo GTM proxy port: $gtmProxyPort
+	echo "== Postgres-XC configuration End ======"
+}
+	
+
+#==================================================
+#
+# Common functions to invoke commend in each node
+#
+#==================================================
+
+function doit
+{
+	vecho $*
+	$*
+}
+
+function vecho
+{
+	if [ $verbose == y ]
+	then
+		echo $*
+	fi
+}
+
+
+function doall
+{
+	vecho doall target: "(" ${allServer[@]} ")"
+	for (( i=0; i< ${#allServer[@]}; i++ ))
+	do
+	  vecho "${allServer[$i]}: $* ..."
+	  ssh $pgxcOwner@${allServer[$i]} $*
+	done
+}
+
+function Doall
+{
+	vecho Doall target: "(" ${DoallTarget[@]} ")"
+	for (( i=0; i< ${#DoallTarget[@]}; i++ ))
+	do
+	  vecho "${DoallTarget[$i]}: $* ..."
+	  ssh $pgxcOwner@${DoallTarget[$i]} $*
+	done
+}
+
+#=================================================
+#
+# Common functions to copy files to each node
+#
+#=================================================
+
+function cpall
+{
+	vecho cpall target: "(" ${allServer[@]} ")"
+
+	for (( i=0; i < ${#allServer[@]}; i++ ))
+	do
+	  vecho scp -r $1 $pgxcOwner@${allServer[$i]}:$2
+	  scp -r $1 $pgxcOwner@${allServer[$i]}:$2
+	done
+}
+
+function Cpall
+{
+	vecho Cpall target: "(" ${CpallTarget[@]} ")"
+	for (( i=0; i< ${#CpallTarget[@]}; i++ ))
+	do
+	  vecho scp -r $1 $pgxcOwner@${CpallTarget[$i]}:$2
+	  scp -r $1 $pgxcOwner@${CpallTarget[$i]}:$2
+	done
+}
+
+#===============================================================
+# Tool function to check -m option to stop coordinator and
+# datanode
+#===============================================================
+function check_immediate
+{
+	case $1 in
+		immediate )
+			immediate= "-m immediate" ;;
+		fast )
+			immediate= "-m fast" ;;
+		normal )
+			immediate= "" ;;
+		* )
+			echo "ERROR: Please specify immediate, fast or normal"
+			exit 1;;
+	esac;
+}
+
+#==================================================
+#
+# Setup .bashrc file for PATH and LD_LIBRARY_PATH
+#
+#==================================================
+
+function setup_bashrc
+{
+	vecho ================================================================
+	vecho Setting .bashrc files
+	for ((i=0; i< ${#allServer[@]}; i++))
+	do
+	  vecho ---- ${allServer[$i]} -------------------------
+	  ssh $pgxcOwner@${allServer[$i]} "cat >> .bashrc" <<EOF
+# .bachrc addition for Postgres-XC PATH and LD_LIBRARY_PATH
+# $datetime
+export PATH_ORG=$PATH
+export PATH=$pgxcInstallDir/bin:$PATH
+export LD_LIBRARY_PATH_ORG=$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$pgxcInstallDir/lib:$LD_LIBRARY_PATH
+export MANPATH_ORG=$MANPATH
+export MANPATH=$pgxcInstallDir/share/man:$MANPATH
+EOF
+	done
+}
+
+function setup_bashrc_individual
+{
+	vecho ================================================================
+	vecho Setting .bashrc files for $pgxcOwner at $1
+	ssh $pgxcOwner@$1 "cat >> .bashrc" <<EOF
+# .bachrc addition for Postgres-XC PATH and LD_LIBRARY_PATH
+# $datetime
+export PATH_ORG=$PATH
+export PATH=$pgxcInstallDir/bin:$PATH
+export LD_LIBRARY_PATH_ORG=$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$pgxcInstallDir/lib:$LD_LIBRARY_PATH
+export MANPATH_ORG=$MANPATH
+export MANPATH=$pgxcInstallDir/share/man:$MANPATH
+EOF
+}
+	
+
+
+#==================================================
+#
+# Deploy binaries and other common things to each server
+#
+# All the build materials will be deployed to each
+# servers.
+#
+#=================================================
+
+function pgxc_deploy_all
+{
+	vecho ================================================================
+	vecho pgxc_deploy_all: copy built materials to all the target servers.
+
+	doall rm -rf $pgxcInstallDir/bin $pgxcInstallDir/include $pgxcInstallDir/lib $pgxcInstallDir/share
+	doall mkdir -p $pgxcInstallDir
+	vecho tar czCf $pgxcInstallDir $tmpDir/wk.tgz bin include lib share
+	tar czCf $pgxcInstallDir $tmpDir/wk.tgz bin include lib share
+	cpall $tmpDir/wk.tgz $pgxcInstallDir/wk.tgz
+	doall tar xzCf  $pgxcInstallDir $pgxcInstallDir/wk.tgz
+	doall rm $pgxcInstallDir/wk.tgz
+	doit rm $tmpDir/wk.tgz
+}
+
+# First argument is the target node.
+
+function pgxc_deploy_individual
+{
+	vecho ================================================================
+	vecho pgxc_deploy_individual: copy built materials to the server $1
+	doit ssh $pgxcOwner@$1 rm -rf $pgxcInstallDir/bin $pgxcInstallDir/include $pgxcInstallDir/lib $pgxcInstallDir/share
+	doit ssh $pgxcOwner@$1 mkdir -p $pgxcInstallDir
+	doit tar czvCf $pgxcInstallDir $tmpDir/wk.tgz bin include lib share
+	doit scp $tmpDir/wk.tgz $pgxcOwner@$1:$pgxcInstallDir/wk.tgz
+	doit ssh $pgxcOwner@$1 tar xzCf $pgxcInstallDir $pgxcInstallDir/wk.tgz
+	doit ssh $pgxcOwner@$1 rm $pgxcInstallDir/wk.tgz
+	doit rm $tmpDir/wk.tgz
+}
+
+#==================================================
+#
+# Cleanup work directories
+#
+#==================================================
+
+function pgxc_clean_gtm
+{
+	vecho ================================================================
+	vecho Clean up gtm directory
+	doit ssh $pgxcOwner@$gtmServer rm -rf $gtmdir
+	doit ssh $pgxcOwner@$gtmServer mkdir -p $gtmdir
+}
+
+function pgxc_clean_normal
+{
+	vecho ================================================================
+	vecho Clean up coordinator, datanode and gtm proxy directories
+
+	DoallTarget=(${normalServer[@]})
+
+	Doall rm -rf $coorddir
+	Doall mkdir -p $coorddir
+	Doall rm -rf $datanodedir
+	Doall mkdir -p $datanodedir
+	Doall rm -rf $gtmproxydir
+	Doall mkdir -p $gtmproxydir
+}
+
+function pgxc_clean_all
+{
+	pgxc_clean_gtm
+	pgxc_clean_normal
+}
+
+#===========================================================
+#
+# Initialize:
+#
+# Run initdb or initgtm, then setup configuration parameters
+#
+#===========================================================
+function pgxc_init_gtm
+{
+	vecho ================================================================
+	vecho GTM initialize
+
+	doit ssh $pgxcOwner@$gtmServer killall -u $pgxcOwner -9 gtm
+	doit ssh $pgxcOwner@$gtmServer rm -rf $gtmdir
+	doit ssh $pgxcOwner@$gtmServer mkdir -p $gtmdir
+	doit ssh $pgxcOwner@$gtmServer initgtm -Z gtm -D $gtmdir
+	vecho Configuring $gtmServer:$gtmdir/gtm.conf
+	ssh $pgxcOwner@$gtmServer "cat >>  $gtmdir/gtm.conf" <<EOF
+listen_addresses = '*'
+port = $gtmPort
+nodename = '$gtmName'
+startup = ACT
+EOF
+}
+
+
+function pgxc_init_gtm_proxy
+{
+	vecho ================================================================
+	vecho GTM Proxy initialize
+	
+	for ((i=0; i< ${#normalServer[@]}; i++))
+	do
+	  vecho ""
+	  vecho ---- ${normalServer[$i]} ----------------
+	  doit ssh $pgxcOwner@${normalServer[$i]} killall -u $pgxcOwner -9 gtm_proxy
+	  doit ssh $pgxcOwner@${normalServer[$i]} rm -rf $gtmproxydir
+	  doit ssh $pgxcOwner@${normalServer[$i]} mkdir -p $gtmproxydir
+	  doit ssh $pgxcOwner@${normalServer[$i]} initgtm -Z gtm_proxy -D $gtmproxydir
+	  vecho Configuring ${normalServer[$i]}:$gtmproxydir/gtm_proxy.conf
+	  ssh $pgxcOwner@${normalServer[$i]} "cat >> $gtmproxydir/gtm_proxy.conf" <<EOF
+nodename = '${gtmPxyNames[$i]}'
+listen_addresses = '*'
+port = $gtmProxyPort
+gtm_host = '$gtmServer'
+gtm_port = $gtmPort
+worker_threads = 1
+gtm_connect_retry_interval = 1
+EOF
+	done
+}
+
+function pgxc_init_coordinator
+{
+	vecho ================================================================
+	vecho Coordinator initialize
+
+	for ((i=0; i< ${#normalServer[@]}; i++))
+	do
+	  vecho ""
+	  vecho ---- ${normalServer[$i]} ----------------
+	  doit ssh $pgxcOwner@${normalServer[$i]} pg_ctl stop -Z coordinator -D $coorddir -m immediate
+	  doit ssh $pgxcOwner@${normalServer[$i]} rm -rf $coorddir
+	  doit ssh $pgxcOwner@${normalServer[$i]} mkdir -p $coorddir
+	  doit ssh $pgxcOwner@${normalServer[$i]} initdb --nodename ${coordnames[$i]} -D $coorddir
+	  vecho Configuring ${normalServer[$i]}:$coorddir/postgresql.conf
+	  ssh $pgxcOwner@${normalServer[$i]} "cat >> $coorddir/postgresql.conf" <<EOF
+log_destination = 'stderr'
+logging_collector = on
+log_directory = 'pg_log'
+listen_addresses = '*'
+port = $coordPort
+max_connections = 100
+pooler_port = $poolerPort
+min_pool_size = 1
+max_pool_size = 200
+gtm_host = '$gtmServer'
+gtm_port = $gtmPort
+EOF
+	  vecho Configuring ${normalServer[$i]}:$coorddir/pg_hba.conf
+	  for ((j= 0; j< ${#coord_listen_address[@]}; j++))
+	  do
+		ssh $pgxcOwner@${normalServer[$i]} "cat >> $coorddir/pg_hba.conf" <<EOF
+host all all ${coord_listen_address[$j]} trust
+EOF
+	  done
+	done
+}
+
+function pgxc_init_datanode
+{
+	vecho ================================================================
+	vecho Datanode initialize
+
+	for ((i=0; i< ${#normalServer[@]}; i++))
+	do
+	  vecho ""
+	  vecho ---- ${normalServer[$i]} ----------------
+	  doit ssh $pgxcOwner@${normalServer[$i]} pg_ctl stop -Z datanode -D $datanodedir -m immediate
+	  doit ssh $pgxcOwner@${normalServer[$i]} rm -rf $datanodedir
+	  doit ssh $pgxcOwner@${normalServer[$i]} mkdir -p $datanodedir
+	  doit ssh $pgxcOwner@${normalServer[$i]} initdb --nodename ${datanodenames[$i]} -D $datanodedir
+	  vecho Configuring ${normalServer[$i]}:$datanodedir/postgresql.conf
+	  ssh $pgxcOwner@${normalServer[$i]} "cat >> $datanodedir/postgresql.conf" <<EOF
+log_destination = 'stderr'
+logging_collector = on
+log_directory = 'pg_log'
+listen_addresses = '*'
+port = $datanodePort
+max_connections = 100
+min_pool_size = 1
+max_pool_size = 200
+gtm_host = '$gtmServer'
+gtm_port = $gtmPort
+EOF
+	  for ((j=0; j< ${#datanode_listen_address[@]}; j++))
+	  do
+		ssh $pgxcOwner@${normalServer[$i]} "cat >> $datanodedir/pg_hba.conf" <<EOF
+host all all ${datanode_listen_address[$j]} trust
+EOF
+	  done
+	done
+}
+
+function pgxc_init_all
+{
+	vecho ================================================================
+	vecho Initialize everything
+
+	pgxc_init_gtm;
+	pgxc_init_gtm_proxy;
+	pgxc_init_coordinator;
+	pgxc_init_datanode;
+}
+
+
+#===============================================================
+#
+# Start nodes
+#
+# At present, gtm_ctl start will not return with start option if stdout
+# is set to tty.   Maybe gtm_ctl needs improvement to detach tty.
+#
+#===============================================================
+function pgxc_start_gtm
+{
+	vecho ================================================================
+	vecho Starting GTM
+
+	doit ssh $pgxcOwner@$gtmServer killall -u $pgxcOwner -9 gtm
+	doit ssh $pgxcOwner@$gtmServer "gtm_ctl start -Z gtm -D $gtmdir > $tmpDir/gtm.out"
+	ssh $pgxcOwner@$gtmServer cat $tmpDir/gtm.out
+	ssh $pgxcOwner@$gtmServer rm $tmpDir/gtm.out
+}
+
+function pgxc_start_gtm_proxy
+{
+	for ((i=0; i< ${#normalServer[@]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]} killall -u $pgxcOwner -9 gtm_proxy
+	  doit ssh $pgxcOwner@${normalServer[$i]} "gtm_ctl start -Z gtm_proxy -D $gtmproxydir > $tmpDir/gtm_proxy.out"
+	  ssh $pgxcOwner@${normalServer[$i]} cat $tmpDir/gtm_proxy.out
+	  ssh $pgxcOwner@${normalServer[$i]} rm $tmpDir/gtm_proxy.out
+	done
+}
+
+function pgxc_start_coordinator
+{
+	for ((i= 0; i< ${#normalServer[@]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]} pg_ctl stop -Z coordinator -D $coorddir -m immediate
+	  doit ssh $pgxcOwner@${normalServer[$i]} "pg_ctl start -Z coordinator -D $coorddir -o -i > $tmpDir/coord.out"
+	  ssh $pgxcOwner@${normalServer[$i]} cat $tmpDir/coord.out
+	  ssh $pgxcOwner@${normalServer[$i]} rm $tmpDir/coord.out
+	done
+}
+
+function pgxc_start_datanode
+{
+	for ((i= 0; i< ${#normalServer[@]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]}  pg_ctl stop -Z datanode -D $datanodedir -m immediate
+	  doit ssh $pgxcOwner@${normalServer[$i]}  "pg_ctl start -Z datanode -D $datanodedir -o -i > $tmpDir/datanode.out"
+	  ssh $pgxcOwner@${normalServer[$i]}  cat $tmpDir/datanode.out
+	  ssh $pgxcOwner@${normalServer[$i]}  rm $tmpDir/datanode.out
+	done
+}
+
+function pgxc_start_all
+{
+	pgxc_start_gtm
+	pgxc_start_gtm_proxy
+	pgxc_start_datanode
+	pgxc_start_coordinator
+}
+
+#======================================================
+#
+# Stop nodes
+#
+#=====================================================
+
+function pgxc_stop_gtm
+{
+	doit ssh $pgxcOwner@$gtmServer gtm_ctl stop -Z gtm -D $gtmdir
+}
+
+function pgxc_stop_gtm_proxy
+{
+	for ((i= 0; i< ${#normalServer[@]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]} gtm_ctl stop -Z gtm_proxy -D $gtmproxydir
+	done
+}
+
+function pgxc_stop_coordinator
+{
+	for ((i= 0; i< ${#normalServer[$i]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]} pg_ctl stop -Z coordinator -D $coorddir $immediate
+	done
+}
+
+function pgxc_stop_datanode
+{
+	for ((i= 0; i< ${#normalServer[$i]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]} pg_ctl stop -Z datanode -D $datanodedir $immediate
+	done
+}
+
+function pgxc_stop_all
+{
+	pgxc_stop_coordinator 
+	pgxc_stop_datanode
+	pgxc_stop_gtm_proxy
+	pgxc_stop_gtm
+}
+
+function pgxc_kill_gtm
+{
+	doit ssh $pgxcOwner@gtmServer killall -u $pgxcOwner gtm
+}
+
+function pgxc_kill_gtm_proxy
+{
+	for ((i= 0; i< ${#normalServer[@]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]} killall -u $pgxcOwner gtm_proxy
+	done
+}
+
+function pgxc_kill_node
+{
+	for ((i= 0; i< ${#normalServer[@]}; i++))
+	do
+	  doit ssh $pgxcOwner@${normalServer[$i]} killall -u $pgxcOwner postgres
+	done
+}
+
+#--------------------------------------------
+# Setup Node info
+#--------------------------------------------
+function setup_nodeinfo
+{
+	for((i= 0; i< ${#normalServer[@]}; i++))
+	do
+	  for((j= 0; j< ${#normalServer[@]}; j++))
+	  do
+		if [ $i -eq $j ]
+		then
+			preferred=',PREFERRED'
+		else
+			preferred=""
+		fi
+		if [ $j -eq 0 ]
+		then
+			primary=",PRIMARY"
+		else
+			primary=""
+		fi
+		psql -p $coordPort -h ${normalServer[$i]} postgres $pgxcOwner <<EOF
+CREATE NODE ${datanodenames[$j]} WITH (TYPE=datanode,HOST='${normalServer[$j]}',PORT=$datanodePort$primary$preferred);
+\q
+EOF
+		if [ $i -ne $j ]
+		then
+			psql -p $coordPort -h ${normalServer[$i]} postgres $pgxcOwner <<EOF
+CREATE NODE ${coordnames[$j]} WITH (TYPE=coordinator,HOST='${normalServer[$j]}',PORT=$coordPort);
+\q
+EOF
+		else
+			psql -p $coordPort -h ${normalServer[$i]} postgres $pgxcOwner <<EOF
+ALTER NODE ${coordnames[$j]} WITH (PORT=$coordPort,HOST='${normalServer[$j]}');
+\q
+EOF
+		fi
+	  done
+	done
+}
+
+#--------------------------------------------
+# Check the configuration is valid
+#--------------------------------------------
+
+if [ ${#normalServer[@]} -ne ${#coordnames[@]} ]
+then
+	echo "Number of coordinators is different from number of servers"
+	exit 1
+fi
+
+if [ ${#normalServer[@]} -ne ${#datanodenames[@]} ]
+then
+	echo "Number of datanodes is different from number of servers"
+	exit 1
+fi
+
+for ((i = 0; i < ${#normalServer[@]} ; i++))
+do
+  for ((j = $i+1; j < ${#normalServer[@]}; j++))
+  do
+	if [ ${normalServer[$i]} == ${normalServer[$j]} ]
+	then
+		echo "Identical server name found in the variable normalServer settings."
+		exit 1
+	fi
+  done
+done
+
+for ((i = 0; i < ${#coordnames[@]}; i++))
+do
+  for ((j = $i+1; j < ${#coordnames[@]}; j++))
+  do
+	if [ ${coordnames[$i]} == ${coordnames[$j]} ]
+	then
+		echo "Identical coordinator names found in the variable coordnames."
+		exit 1
+	fi
+  done
+done
+
+for ((i = 0; i < ${#datanodenames[@]}; i++))
+do
+  for ((j = $i+1; j < ${#datanodenames[@]}; j++))
+  do
+	if [ ${datanodenames[$i]} == ${datanodenames[$j]} ]
+	then
+		echo "Identical coordinator names found in the variable datanodenames."
+		exit 1
+	fi
+  done
+done
+
+# Check port number overlap
+
+if [ $gtmProxyPort == $coordPort -o $gtmProxyPort == $poolerPort -o $gtmProxyPort == $datanodePort -o $coordPort == $poolerPort -o $coordPort == $datanodePort -o $poolerPort == $datanodePort ]
+then
+	echo "Overlap in gtmProxyPort, coordPort, poolerPort and datanodePort.  Exiting."
+	exit 1
+fi
+
+# Check working dir
+
+if [ $coorddir == $datanodedir -o $coorddir == $gtmproxydir -o $datanodedir == $gtmproxydir ]
+then
+	echo "Overlaop in coorddir, datanodedir and gtmproxydir.  Exiting."
+	exit 1
+fi
+
+#=================================================
+#
+# Setup doall target nodes
+#
+#================================================
+
+gtmOtherServer=y
+for ((i = 0; i < ${#normalServer[@]}; i++))
+do
+  if [ $gtmServer == ${normalServer[$i]} ]
+  then
+	  gtmOtherServer=n
+  fi
+done
+if [ $gtmOtherServer == y ]
+then
+	allServer=(${normalServer[@]} $gtmServer)
+else
+	allServer=$normalServer
+fi
+
+#===================================================
+#
+# MAIN PATH
+#
+#===================================================
+
+cd $HOME
+
+if [ $# -le 0 ]
+then
+	echo 'No option specified. exiting';
+	exit 0;
+fi
+
+case $1 in
+	-v )
+		shift;
+		printConfig;
+		verbose=y;;
+	--verbose)
+		shift;
+		printConfig;
+		verbose=y;;
+esac
+
+if [ $# -le 0 ]
+then
+	echo 'No option specified. exiting';
+	exit 0;
+fi
+
+case $1 in
+	go )
+		shift;
+		if [ $# -gt 0 ]
+		then
+			echo ERROR: extra option for go command, $1
+			exit 1
+		fi
+		echo -n "Do you want to setup PATH and LD_LIBRARY_PATH (y/n)?"
+		read yesorno
+		case $yesorno in
+			y* )
+				pgxc_setup_bashrc;;
+			Y* )
+				pgxc_setup_bashrc;;
+		esac
+		pgxc_deploy_all
+		pgxc_claan_all
+		pgxc_init_all
+		pgxc_start_all
+		sleep 1				# should wait until all the components are up.
+		setup_nodeinfo
+		printConfig;;
+	deploy )
+		shift;
+		if [ $# -le 0 ]
+		then
+			pgxc_deploy_all;
+			exit 0;
+		else
+			if [ $1 == all ]
+			then
+				pgxc_deploy_all
+			else
+				pgxc_deloy_individual $1;
+			fi
+			exit 0;
+		fi;;
+
+	clean )
+		shift;
+		if [ $# -le 0 ]
+		then
+			pgxc_clean_all;
+			exit 0;
+		else
+			case $1 in
+				all )
+					pgxc_clean_all;
+					exit 0;;
+				gtm )
+					pgxc_clean_gtm;
+					exit 0;;
+				normal )
+					pgxc_clean_normal;
+					exit 0;;
+				* )
+					echo "Invalid option for 'all'";
+					exit 1;;
+			esac;
+		fi;;
+	init )
+		shift;
+		if [ $# -le 0 ]
+		then
+			pgxc_init_all;
+			exit 0;
+		else
+			case $1 in
+				all )
+					pgxc_init_all;
+					exit 0;;
+				gtm )
+					pgxc_init_gtm;
+					exit 0;;
+				gtm_proxy )
+					pgxc_init_gtm_proxy;
+					exit 0;;
+				node )
+					pgxc_init_coordinator;
+					pgxc_init_datanode;
+					exit 0;;
+				coordinator )
+					pgxc_init_coordinator;
+					exit 0;;
+				datanode )
+					pgxc_init_coordinator;
+					exit 0;;
+				* )
+					echo "Invalid option for init operation";
+					exit 1;;
+			esac;
+		fi;;
+	set )
+		shift;
+		if [ $# -le 0 ]
+		then
+			echo ERROR: no set command found
+			exit 1
+		fi
+		case $1 in
+			node )
+				shift;
+				if [ $# -gt 0 ]
+				then
+					echo ERROR: extra argument found
+					exit 1
+				else
+					setup_nodeinfo
+					exit 0
+				fi;;
+			bashrc )
+				shift;
+				if [ $# -le 0 ]
+				then
+					setup_bashrc
+					exit 0
+				fi
+				if [ $1 == all ]
+				then
+					setup_bashrc
+				else
+					setup_bashrc_individual $1
+				fi
+				exit 0;;
+			* )
+				echo ERROR: invalid set option $1
+				exit 1;;
+		esac;;
+
+	show )
+		shift;
+		if [ $# -le 0 ]
+		then
+			echo ERROR: no show option found.
+			exit 1;
+		fi
+		case $1 in
+			configuration )
+				shift;
+				if [ $# -gt 0 ]
+				then
+					echo ERROR: extra show configuration option found, $1
+					exit 1;
+				fi
+				printConfig;;
+			* )
+				echo ERROR: invalid show option found $1
+				exit 1;;
+		esac;;
+
+	start )
+		shift;
+		if [ $# -le 0 ]
+		then
+			pgxc_start_all;
+			exit 0;
+		else
+			case $1 in
+				all )
+					pgxc_start_all;
+					exit 0;;
+				gtm )
+					pgxc_start_gtm;
+					exit 0;;
+				gtm_proxy )
+					pgxc_start_gtm_proxy;
+					exit 0;;
+				coordinator )
+					pgxc_start_coordinator;
+					exit 0;;
+				datanode )
+					pgxc_start_datanode;
+					exit 0;;
+				node )
+					pgxc_start_datanode;
+					pgxc_start_coordinator;
+					exit 0;;
+				* )
+					echo 'Invalid start option';
+					exit 1;;
+			esac;
+		fi;;
+	stop )
+		shift;
+		if [ $# -le 0 ]
+		then
+			immediate="-m fast"
+			pgxc_stop_all;
+			exit 0;
+		else
+			case $1 in
+				all )
+					shift;
+					if [ $# -le 0 ]
+					then
+						immediate="-m fast"
+					else
+						check_immediate $1
+					fi
+					pgxc_stop_all
+					exit 0;;
+				gtm )
+					shift;
+					if [ $# -gt 0 ]
+					then
+						echo ERROR: extra option is specified, $1
+						exit 1
+					fi
+					pgxc_stop_gtm;
+					exit 0;;
+				gtm_proxy )
+					shift;
+					if [ $# -gt 0 ]
+					then
+						echo ERROR: extra option is specified, $1
+						exit 1
+					fi
+					pgxc_stop_gtm_proxy;
+					exit 0;;
+				coordinator )
+					shift;
+					if [ $# -le 0 ]
+					then
+						immediate="-m fast"
+					else
+						check_immediate $1
+					fi
+					pgxc_stop_coordinator;
+					exit 0;;
+				datanode )
+					shift;
+					if [ $# -le 0 ]
+					then
+						immediate="-m fast"
+					else
+						check_immediate $1
+					fi
+					pgxc_stop_datanode;
+					exit 0;;
+				node )
+					shift;
+					if [ $# -le 0 ]
+					then
+						immediate="-m fast"
+					else
+						check_immediate $1
+					fi
+					pgxc_stop_coordinator;
+					pgxc_stop_datanode;
+					exit 0;;
+				*)
+					echo "Invalid option value for stop"
+					exit 1;;
+			esac;
+		fi;;
+
+	kill )
+		shift;
+		if [ $# -le 0 ]
+		then
+			pgxc_kill_node
+			pgxc_kill_gtm_proxy
+			pgxc_kill_gtm
+			exit 0
+		fi
+		case $1 in
+			gtm )
+				shift;
+				if [ $# -gt 0 ]
+				then
+					echo ERROR: extra option for kill gtm found, $1
+					exit 1
+				fi
+				pgxc_kill_gtm
+				exit 0;;
+			gtm_proxy )
+				shift;
+				if [ $# -gt 0 ]
+				then
+					echo ERROR: extra option for kill gtm_proxy found, $1
+					exit 1
+				fi
+				pgxc_kill_gtm_proxy
+				exit 0;;
+			node )
+				shift;
+				if [ $# -gt 0 ]
+				then
+					echo ERROR: extra option for kill node found, $1
+					exit 1
+				fi
+				pgxc_kill_node
+				exit 0;;
+			* )
+				eco ERROR: invalid option for pgxc kill, $1
+				exit 1;;
+		esac;;
+
+	* )
+		echo 'Invalid option';
+		exit 1;;
+esac
