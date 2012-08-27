@@ -2,8 +2,6 @@
 #
 # Shell tool to run pgxc in multi-server environment
 #
-# Version 1.0.0, Aug.22nd, 2012
-#
 #---------------------------------------------------
 #
 # Copyright (c) 2012, Postgres-XC Development Group
@@ -647,8 +645,8 @@ max_connections = 100
 pooler_port = $poolerPort
 min_pool_size = 1
 max_pool_size = 200
-gtm_host = '$gtmServer'
-gtm_port = $gtmPort
+gtm_host = '${normalServer[$i]}'
+gtm_port = $gtmProxyPort
 EOF
 	  vecho Configuring ${normalServer[$i]}:$coorddir/pg_hba.conf
 	  for ((j= 0; j< ${#coord_listen_address[@]}; j++))
@@ -683,8 +681,8 @@ port = $datanodePort
 max_connections = 100
 min_pool_size = 1
 max_pool_size = 200
-gtm_host = '$gtmServer'
-gtm_port = $gtmPort
+gtm_host = '${normalServer[$i]}'
+gtm_port = $gtmProxyPort
 EOF
 	  for ((j=0; j< ${#datanode_listen_address[@]}; j++))
 	  do
@@ -1026,7 +1024,7 @@ case $1 in
 			then
 				pgxc_deploy_all
 			else
-				pgxc_deloy_individual $1;
+				pgxc_deploy_individual $1;
 			fi
 			exit 0;
 		fi;;
