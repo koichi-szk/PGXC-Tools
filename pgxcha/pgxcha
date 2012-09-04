@@ -166,7 +166,8 @@ coordArchLogDirs=($coordArchLogDir $coordArchLogDir $coordArchLogDir $coordArchL
 # These files will go to corresponding files for the master.
 # You may supply your bash script to setup extra config lines and extra pg_hba.conf entries 
 # Or you may supply these files manually.
-coordExtraConfig=none	# Extra configuration file for coordinators.  This file will be added to all the coordinators' postgresql.conf
+coordExtraConfig=none	# Extra configuration file for coordinators.  This file will be added to all the coordinators'
+						# postgresql.conf
 coordSpecificExraConfig=(none none none none)
 coordExtraPgHba=none	# Extra entry for pg_hba.conf.  This file will be added to all the coordinators' pg_hba.conf
 coordSpecificExtraPgHba=(none none none none)
@@ -196,10 +197,10 @@ datanodeMasterServers=(node01 node02 node03 node04)	# none means this master is 
 													# The cluster is not operational until the master is
 													# recovered and ready to run.	
 datanodeMasterDirs=($datanodeMasterDir $datanodeMasterDir $datanodeMasterDir $datanodeMasterDir)
-datanodeMaxWalSender=5								# max_wal_senders: needed to configure slave. If zero value is specified,
-													# it is expected to supply this parameter explicitly by external files
-												    # specified in the following.	
-													# If you don't configure slaves, leave this value to zero.
+datanodeMaxWalSender=5								# max_wal_senders: needed to configure slave. If zero value is 
+													# specified, it is expected this parameter is explicitly supplied
+													# by external configuration files.
+													# If you don't configure slaves, leave this value zero.
 datanodeMaxWalSenders=($datanodeMaxWalSender $datanodeMaxWalSender $datanodeMaxWalSender $datanodeMaxWalSender)
 						# max_wal_senders configuration for each datanode
 
@@ -217,7 +218,8 @@ datanodeArchLogDirs=( $datanodeArchLogDir $datanodeArchLogDir $datanodeArchLogDi
 # You may supply your bash script to setup extra config lines and extra pg_hba.conf entries here.
 # These files will go to corresponding files for the master.
 # Or you may supply these files manually.
-datanodeExtraConfig=none	# Extra configuration file for datanodes.  This file will be added to all the datanodes' postgresql.conf
+datanodeExtraConfig=none	# Extra configuration file for datanodes.  This file will be added to all the 
+							# datanodes' postgresql.conf
 datanodeSpecificExtraConfig=(none none none none)
 datanodeExtraPgHba=none		# Extra entry for pg_hba.conf.  This file will be added to all the datanodes' postgresql.conf
 datanodeSpecificExtraPgHba=(none none none none)
@@ -228,7 +230,7 @@ datanodeSpecificExtraPgHba=(none none none none)
 #==========================================================================================================================
 
 # Common variables ######################################################################
-xc_prompt='PGXC$'
+xc_prompt='PGXC$ '
 interactive=n
 verbose=n
 #============================================================
@@ -239,14 +241,14 @@ verbose=n
 
 function vecho
 {
-	if [ $verbose == y ]; then
+	if [ "$verbose" == y ]; then
 		echo $*
 	fi
 }
 
 function iecho
 {
-	if [ $interactive == y ]; then
+	if [ "$interactive" == y ]; then
 		echo $*
 	fi
 }
@@ -400,14 +402,14 @@ function set_debug
 
 function funcname
 {
-	if [ $DEBUG == y ];	then
+	if [ "$DEBUG" == y ];	then
 		echo '******** ' "$1() called" ' **********'
 	fi
 }
 
 function decho
 {
-	if [ $DEBUG == y ]; then
+	if [ "$DEBUG" == y ]; then
 		echo $*
 	fi
 }
@@ -421,12 +423,13 @@ function addServer
 	local i
 
 	append=y
-	if [ $1 == 'none' ]; then
+	if [ "$1" == 'none' ] || [ "$i" == N/A ]; then
 		return
 	fi
 	for((i=0; i<${#allServers[@]}; i++)); do
-		if [ ${allServers[$i]} == $1 ]; then
+		if [ ${allServers[$i]} == "$1" ]; then
 			append=n
+			break
 		fi
 	done
 	if [ $append == y ]; then
@@ -478,13 +481,12 @@ function makeServerList
 			addServer ${datanodeSlaveServers[$i]}
 		fi
 	done
-	if [ $DEBUG == y ]; then
-		echo '(' ${allServers[@]} ')'
-	fi
+	decho '(' ${allServers[@]} ')'
 }
 
 #### Handle Slave Configurations ###################################
-# Set GTM Proxy info if it is not configured at all
+
+# Set GTM Proxy info unconfigured.
 function gtm_proxy_set_to_no
 {
 	local i
@@ -505,7 +507,7 @@ function gtm_proxy_set_to_no
 	done
 }
 
-# Set Coordinator Slave info if it is not configured at all
+# Set Coordinator Slave info unconfigured
 function coord_slave_set_to_no
 {
 	local i
@@ -521,7 +523,7 @@ function coord_slave_set_to_no
 	done
 }
 
-# Set Datanode slave info if it is not configured at all
+# Set Datanode slave info unconfigured
 function datanode_slave_set_to_no
 {
 	local i
@@ -539,22 +541,18 @@ function datanode_slave_set_to_no
 
 # Handle the case where slaves are not configured. --> Construct empty configuration for them
 # We assume that all the server list has been constructed.
+
 function handle_no_slaves
 {
 	local i
 	local isEmpty
 
 	# GTM slave
-	if [ $gtmSlave != y ]; then
+	if [ $gtmSlave != y ] || [ "$gtmSlaveServer" == none ] || [ "$gtmSlaveServer" == N/A ]; then
+		gtmSlave=n
 		gtmSlaveServer=none
 		gtmSlavePort=0
 		gtmSlaveDir=none
-	else
-		if [ $gtmSlaveServer == none ]; then
-			gtmSlave=n
-			gtmSlavePort=0
-			gtmSlaveDir=none
-		fi
 	fi
 
 	# GTM Proxy
@@ -563,12 +561,12 @@ function handle_no_slaves
 	else
 		isEmpty=y
 		for ((i=0; i<${#gtmProxyServers[@]}; i++)); do
-			if [ ${gtmProxyServers[$i]} != none -a ${gtmProxyServers[$i]} != "" ]; then
+			if [ ${gtmProxyServers[$i]} != none ] && [ ${gtmProxyServers[$i]} != N/A ]; then
 				isEmpty=n
 				break
 			fi
 		done
-		if [ $isEmpty == y ]; then
+		if [ "$isEmpty" == y ]; then
 			gtm_proxy_set_to_no
 			gtmProxy=n
 		fi
@@ -580,12 +578,12 @@ function handle_no_slaves
 	else
 		isEmpty=y
 		for ((i=0; i<${#coordSlaveServers[@]}; i++)); do
-			if [ ${coordSlaveServers[$i]} != none -a ${coordSlaveServers[$i]} != "" ]; then
+			if [ ${coordSlaveServers[$i]} != none ] && [ ${coordSlaveServers[$i]} != N/A ]; then
 				isEmpty=n
 				break
 			fi
 		done
-		if [ $isEmpty == y ]; then
+		if [ "$isEmpty" == y ]; then
 			coord_slave_set_to_no
 			coordSlave=n
 		fi
@@ -597,12 +595,12 @@ function handle_no_slaves
 	else
 		isEmpty=y
 		for ((i=0; i<${#datanodeSlaveServers[@]}; i++)); do
-			if [ ${datanodeSlaveServers[$i]} != none -a ${coordSlaveServers[$I]} != "" ]; then
+			if [ ${datanodeSlaveServers[$i]} != none ] && [ ${coordSlaveServers[$I]} != N/A ]; then
 				isEmpty=n
 				break
 			fi
 		done
-		if [ $isEmpty == y ]; then
+		if [ "$isEmpty" == y ]; then
 			datanode_slave_set_to_no
 			datanodeSlave=n
 		fi
@@ -617,10 +615,9 @@ function verifyResource
 	local i
 	local j
 
-
 	# Number of array entries
 	# GTM proxies
-	if [ $gtmProxy == y ]; then
+	if [ "$gtmProxy" == y ]; then
 		i=${#gtmProxyNames[@]}
 		if [ $i -ne ${#gtmProxyServers[@]} -o $i -ne ${#gtmProxyPorts[@]} -o $i -ne ${#gtmProxyDirs[@]} -o $i -ne ${#gtmPxySpecificExtraConfig[@]} ]; then
 			echo ERROR: Invalid entry numbers in gtm proxy configuration.
@@ -637,7 +634,7 @@ function verifyResource
 		echo ERROR: Invalid entry numbers in coordinator configuration.
 		return 1
 	fi
-	if [ $coordSlave == y ]; then
+	if [ "$coordSlave" == y ]; then
 		if [ $i -ne ${#coordSlaveServers[@]} -o $i -ne ${#coordSlaveDirs[@]} -o $i -ne ${#coordArchLogDirs[@]} ]; then
 			echo ERROR: Invalid entry numbers in coordinator configuration.
 			return 1
@@ -653,7 +650,7 @@ function verifyResource
 		echo ERROR: Invalid entry numbers in datanode configuration.
 		return 1
 	fi
-	if [ $datanodeSlave == y ]; then
+	if [ "$datanodeSlave" == y ]; then
 		if [ $i -ne ${#datanodeSlaveServers[@]} -o $i -ne ${#datanodeSlaveDirs[@]} -o $i -ne ${#datanodeArchLogDirs[@]} ]; then
 			echo ERROR: Invalid entry numbers in datanode configuration.
 			return 1
@@ -843,9 +840,11 @@ function printConfig
 				echo "Datanode Master"
 				echo "    " Nodename: "'"${datanodeNames[$jj]}"'", port: ${datanodePorts[$jj]}
 				echo "    " MaxWalSenders: ${datanodeMaxWalSenders[$jj]}, Dir: "'"${datanodeMasterDirs[$jj]}
-				echo "    " ExtraConfig: "'"datanodeExtraConfig"'", Specific Extra Config: "'"${datanodeSpecificExtraConfig[$jj]}"'"
+				echo "    " ExtraConfig: "'"datanodeExtraConfig"'", Specific Extra Config: \
+					"'"${datanodeSpecificExtraConfig[$jj]}"'"
 				echo "    " pg_hba entries: '(' ${datanodePgHbaEntries[@]} ')'
-				echo "    " Extra pg_hba: "'"$datanodeExtraPgHba"'", Specific Extra pg_hba: "'"${datanodeSpecificExtraPgHba[$jj]}"'"
+				echo "    " Extra pg_hba: "'"$datanodeExtraPgHba"'", Specific Extra pg_hba: \
+					"'"${datanodeSpecificExtraPgHba[$jj]}"'"
 			fi
 		done
 	done
@@ -893,6 +892,7 @@ export LD_LIBRARY_PATH_ORG=\$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$pgxcInstallDir/lib:\$LD_LIBRARY_PATH
 export MANPATH_ORG=\$MANPATH
 export MANPATH=$pgxcInstallDir/share/man:\$MANPATH
+# End of addition
 EOF
 	  done
 }
@@ -911,6 +911,7 @@ export LD_LIBRARY_PATH_ORG=\$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$pgxcInstallDir/lib:\$LD_LIBRARY_PATH
 export MANPATH_ORG=\$MANPATH
 export MANPATH=$pgxcInstallDir/share/man:\$MANPATH
+# End of addition
 EOF
 }
 
@@ -944,6 +945,7 @@ function pgxc_deploy_individual
 {
     vecho ================================================================
     vecho pgxc_deploy_individual: copy built materials to the server $1
+
     doit ssh $pgxcUser@$1 rm -rf $pgxcInstallDir/bin $pgxcInstallDir/include $pgxcInstallDir/lib $pgxcInstallDir/share
     doit ssh $pgxcUser@$1 mkdir -p $pgxcInstallDir
     doit tar czCf $pgxcInstallDir $tmpDir/wk.tgz bin include lib share
@@ -952,6 +954,7 @@ function pgxc_deploy_individual
     doit ssh $pgxcUser@$1 rm $pgxcInstallDir/wk.tgz
     doit rm $tmpDir/wk.tgz
 }
+
 #==================================================
 #
 # Cleanup work directories
@@ -989,7 +992,7 @@ function pgxc_clean_node
 				return;;
 			* )
 				echo ERROR: invalid argument for pgxc_clean_node, $1
-				exit 1;;
+				return 1;;
 		esac
 	fi
 	for ((i= 0; i< ${#gtmProxyNames[@]}; i++)); do
@@ -1014,7 +1017,7 @@ function pgxc_clean_node
 					return;;
 				* )
 					echo ERROR: invalid argument for pgxc_clean_node, $1
-					exit 1;;
+					return 1;;
 			esac
 		fi
 	done
@@ -1034,7 +1037,7 @@ function pgxc_clean_node
 					return;;
 				* )
 					echo ERROR: invalid argument for pgxc_clean_node, $1
-					exit 1;;
+					return 1;;
 			esac
 		fi
 	done
@@ -1057,32 +1060,67 @@ function pgxc_clean_node_all
 	done
 }
 
-function print_initgtm_out
+# print_stdout host file prompt
+function print_stdout
 {
+	local host
+	local file
+	if [ $# -ne 3 ]; then
+		return 1
+	fi
+	host=$1
+	shift
+	file=$1
+	shift
 	if [ $verbose == y ]; then
 		if [ $interactive != y ]; then
-			ssh $pgxcUser@$1 cat $2
+			ssh $pgxcUser@$host cat $file
 		else
-			echo -n need initgtm result\?
+			echo -n $*
 			if [ `readyesno n` == y ]; then
-				ssh $pgxcUser@$1 cat $2
+				ssh $pgxcUser@$host cat $file
 			fi
 		fi
 	fi
+	ssh $pgxcUser@$host rm -f $file
+}
+
+# Print without asking, if $verbose == y
+function do_stdout
+{
+	local host
+	local file
+	if [ $# -ne 2 ]; then
+		return 1
+	fi
+	host=$1
+	shift
+	file=$1
+	shift
+	if [ $verbose == y ]; then
+		ssh $pgxcUser@$host cat $file
+	fi
+	ssh $pgxcUser@$host rm -f $file
+}
+
+function print_initgtm_out
+{
+	print_stdout $1 $2 "Print initgtm output\?"
 }
 
 function print_initdb_out
 {
-	if [ $verbose == y ]; then
-		if [ $interactive != y ]; then
-			ssh $pgxcUser@$1 cat $2
-		else
-			echo -n need initgtm result\?
-			if [ `readyesno n` == y ]; then
-				ssh $pgxcUser@$1 cat $2
-			fi
-		fi
-	fi
+	print_stdout $1 $2 "Print initgtm output\?"
+}
+
+function print_pg_ctl_out
+{
+	print_stdout $1 $2 "Print pg_ctl output\?"
+}
+
+function print_gtm_ctl_out
+{
+	print_stdout $1 $2 "Print gtm_ctl output\?"
 }
 
 #===========================================================                                                 
@@ -1152,9 +1190,10 @@ function pgxc_init_gtm_master
     doit ssh $pgxcUser@$gtmMasterServer mkdir -p $gtmMasterDir
     doit ssh $pgxcUser@$gtmMasterServer "initgtm -Z gtm -D $gtmMasterDir 2>&1 > $tmpDir/initgtm.out"
 	print_initgtm_out $gtmMasterServer $tmpDir/initgtm.out
-	ssh $pgxcUser@$gtmMasterServer rm $tmpDir/initgtm.out
     vecho Configuring $gtmMasterServer:$gtmMasterDir/gtm.conf
     ssh $pgxcUser@$gtmMasterServer "cat >>  $gtmMasterDir/gtm.conf" <<EOF
+#===========================================
+# Added at initialization. $datetime
 listen_addresses = '*'
 EOF
 	if [ $gtmExtraConfig != none ]; then
@@ -1167,6 +1206,7 @@ EOF
 port = $gtmMasterPort
 nodename = '$gtmName'
 startup = ACT
+# End of addition
 EOF
 }
 
@@ -1195,7 +1235,6 @@ function pgxc_init_gtm_slave
     doit ssh $pgxcUser@$gtmSlaveServer mkdir -p $gtmSlaveDir
     doit ssh $pgxcUser@$gtmSlaveServer "initgtm -Z gtm -D $gtmSlaveDir 2>&1 > $tmpDir/initgtm.out"
 	print_initgtm_out $gtmSlaveServer $tmpDir/initgtm.out
-	ssh $pgxcUser@$gtmSlaveServer rm -f $tmpDir/initgtm.out
     vecho Configuring $gtmSlaveServer:$gtmSlaveDir/gtm.conf
     ssh $pgxcUser@$gtmSlaveServer "cat >>  $gtmSlaveDir/gtm.conf"  <<EOF
 listen_addresses = '*'
@@ -1222,8 +1261,7 @@ function pgxc_start_gtm_master
 
 	doit ssh $pgxcUser@$gtmMasterServer killall -u $pgxcOwner -9 gtm
 	doit ssh $pgxcUser@$gtmMasterServer "gtm_ctl start -Z gtm -D $gtmMasterDir > $tmpDir/gtm.out"
-	ssh $pgxcUser@$gtmMasterServer cat $tmpDir/gtm.out
-	ssh $pgxcUser@$gtmMasterServer rm $tmpDir/gtm.out
+	do_stdout $gtmMasterServer $tmpDir/gtm.out
 }
 
 function pgxc_start_gtm_slave
@@ -1242,8 +1280,7 @@ function pgxc_start_gtm_slave
 	fi
 	doit ssh $pgxcUser@$gtmSlaveServer killall -u $pgxcOwner -9 gtm
 	doit ssh $pgxcUser@$gtmSlaveServer "gtm_ctl start -Z gtm -D $gtmSlaveDir > $tmpDir/gtm.out"
-	ssh $pgxcUser@$gtmSlaveServer cat $tmpDir/gtm.out
-	ssh $pgxcUser@$gtmSlaveServer rm $tmpDir/gtm.out
+	do_stdout $gtmSlaveServer $tmpDir/gtm.out
 }
 
 
@@ -1359,7 +1396,6 @@ function pgxc_init_gtm_proxy
 			doit ssh $pgxcUser@${gtmProxyServers[$i]} mkdir -p ${gtmProxyDirs[$i]}
 			doit ssh "$pgxcUser@${gtmProxyServers[$i]} initgtm -Z gtm_proxy -D ${gtmProxyDirs[$i]} 2>&1 > $tmpDir/initgtm.out"
 			print_initgtm_out ${gtmProxyServers[$i]} $localTmpDir/initgtm.out
-			ssh $pgxcUser@${gtmProxyServers[$i]} rm $localTmpDir/initgtm.out
 			vecho Configuring ${gtmProxyServers[$i]}:${gtmProxyDirs[$i]}/gtm_proxy.conf
 			if [ $gtmPxyExtraConfig != none ] && [ $gtmPxyExtrConfig != N/A ]; then
 				ssh $pgxcUser@${gtmProxyServers[$i]} "cat >> ${gtmProxyDirs[$i]}/gtm_proxy.conf" < $gtmPxyExtraConfig
@@ -1408,8 +1444,7 @@ function pgxc_start_gtm_proxy
 		if [ $1 == ${gtmProxyNames[$i]} ]; then
 			doit ssh $pgxcUser@${gtmProxyServers[$i]} killall -u $pgxcOwner -9 gtm_proxy
 			doit ssh $pgxcUser@${gtmProxyServers[$i]} "gtm_ctl start -Z gtm_proxy -D ${gtmProxyDirs[$i]} 2>&1 > $tmpDir/gtm_proxy.out"
-			ssh $pgxcUser@${gtmProxyServers[$i]} cat $tmpDir/gtm_proxy.out
-			ssh $pgxcUser@${gtmProxyServers[$i]} rm $tmpDir/gtm_proxy.out
+			do_stdout ${gtmProxyServers[$i]} $tmpDir/gtm_proxy.out
 			return
 		fi
 	done
@@ -1590,14 +1625,13 @@ function pgxc_init_coordinator_master
 		if [ $1 == ${coordNames[$i]} ] && [ ${coordMasterServers[$i]} != none ] && [ ${coordMasterServers[$i]} != N/A ]; then
 			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]}  -c 'select 1' postgres $pgxcOwner > /dev/null 2> /dev/null
 			if [ $? -eq 0 ]; then
-				echo ERROR: target coordinator master is running now.
+				echo ERROR: target coordinator master is running now.  Stop it to configure.
 				return 1
 			fi
 			doit ssh $pgxcUser@${coordMasterServers[$i]} rm -rf ${coordMasterDirs[$i]}
 			doit ssh $pgxcUser@${coordMasterServers[$i]} mkdir -p ${coordMasterDirs[$i]}
 			doit ssh $pgxcUser@${coordMasterServers[$i]} "initdb --nodename ${coordNames[$i]} -D ${coordMasterDirs[$i]} 2>&1 > $tmpDir/initdb.out"
 			print_initdb_out ${coordMasterServers[$i]} $tmpDir/initdb.out
-			ssh $pgxcUser@${coordMasterServers[$i]} rm $tmpDir/initdb.out
 			vecho Configuring ${coordMasterServers[$i]}:${coordMasterDirs[$i]}/postgresql.conf
 		    # Get effective GTM port and host.   If gtm_proxy is not found, then connect to GTM
 			local j
@@ -1616,6 +1650,10 @@ function pgxc_init_coordinator_master
 				vecho Configuring $pgxcUser@${coordMasterServer[$i]}/postgresql.conf using $coordExtraConfig
 				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/postgresql.conf" < $coordExtraConfig
 			fi
+			if [ ${coordSpecificExtraConfig[$i]} != none ] && [ ${coordSpecificExtraConfig[$i]} != none ]; then
+				vecho Configuring $pgxcUser@${coordMasterServers[$i]}/postgresql.conf using ${coordSpecificExtraConfig[$i]}
+				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/postgresql.conf" < ${coordSpecificExtraConfig[$i]}
+			fi
 			vecho Configuring  $pgxcUser@${coordMasterServers[$i]}:${coordMasterDirs[$i]}/postgresql.conf
 			ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/postgresql.conf" <<EOF
 #===========================================
@@ -1631,7 +1669,7 @@ gtm_host = '$targetGTMhost'
 gtm_port = $targetGTMport
 EOF
 			# Additional initialization for log_shipping.
-			if [ ${coordSlaveServers[$i]} != none ] && [ ${coordSlaveServers[$i]} != N/A ]; then
+			if [ $coordSlave == y ] && [ ${coordSlaveServers[$i]} != none ] && [ ${coordSlaveServers[$i]} != N/A ]; then
 				# At least cleanup remote archive directory.
 				pgxc_clean_dir ${coordSlaveServers[$i]} ${coordArchLogDirs[$i]}
 				# Then setup postgresql.conf
@@ -1647,16 +1685,21 @@ EOF
 # End of Addition
 EOF
 			fi
-			local j
+			vecho Configuring ${coordMasterServers[$i]}:${coordMasterDirs[$i]}/pg_hba.conf
+			ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/pg_hba.conf"  <<EOF
+#=================================================
+# Addition at initialization, $datetime 
+EOF
 			if [ $coordExtraPgHba != none ] && [ $coordExtraPgHba != N/A ]; then
 				vecho Configuring ${coordMasterServers[$i]}:${coordMasterDirs[$i]}/pg_hba.conf using $coordExtraPgHba
 				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/pg_hab.conf" < $coordExtraPgHba
 			fi
-			vecho Configuring ${coordMasterServers[$i]}:${coordMasterDirs[$i]}/pg_hba.conf
+			if [ ${coordSpecificExtraPgHba[$i]} != none ] && [ ${coordSpecificExtraPgHba[$i]} != N/A ]; then
+				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/pg_hab.conf" < ${coordSpecificExtraPgHba[$i]}
+			fi
+			local j
 			for ((j=0; j< ${#coordPgHbaEntries[@]}; j++)); do
 				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/pg_hba.conf" <<EOF
-#=================================================
-# Addition at initialization, $datetime 
 host all $pgxcOwner ${coordPgHbaEntries[$j]} trust
 EOF
 				if [ ${coordSlaveServers[$i]} != none ] && [ ${coordSlaveServers[$i]} != N/A ]; then
@@ -1707,8 +1750,7 @@ function pgxc_start_coordinator_master
 				return 1
 			fi
 			doit ssh $pgxcUser@${coordMasterServers[$i]} "pg_ctl start -Z coordinator -D ${coordMasterDirs[$i]} -o -i 2>&1 > $tmpDir/coord.out"
-			ssh $pgxcUser@${coordMasterServers[$i]} cat $tmpDir/coord.out
-			ssh $pgxcUser@${coordMasterServers[$i]} rm -f $tmpDir/coord.out
+			do_stdout ${coordMasterServers[$i]} $tmpDir/coord.out
 			return
 		fi
 	done
@@ -1921,19 +1963,16 @@ function pgxc_init_coordinator_slave
   		    # Clean slave's directory
 			doit ssh $pgxcUser@${coordSlaveServers[$i]} rm -rf ${coordSlaveDirs[$i]}
 			doit ssh $pgxcUser@${coordSlaveServers[$i]} mkdir -p ${coordSlaveDirs[$i]}
-		    # Restart the master --- some configuration parameter needs restart.  Reload is ot sufficient
 		    # if the master is not running, we just start it and then stop it.
 			if [ $start_master == y ]; then
+				iecho Starting the coordinator master to obtain base backup
 				doit ssh $pgxcUser@${coordMasterServers[$i]} "pg_ctl start -Z coordinator -D ${coordMasterDirs[$i]} -o -i > $tmpDir/cmd.out"
-				ssh $pgxcUser@${coordMasterServers[$i]} "cat $tmpDir/cmd.out"
-				ssh $pgxcUser@${coordMasterServers[$i]} "rm $tmpDir/cmd.out"
+				do_stdout ${coordMasterServers[$i]} $tmpDir/cmd.out
 				sleep 2
 			fi
 		    # Obtain base backup of the master
-
-			# Now working yet.   Authentication doesn't work.
-			#		--- Aug.29, 2012 ----
 			doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_basebackup -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -D ${coordSlaveDirs[$i]} -x
+
 		    # Configure recovery.conf of the slave
 			vecho -- Configure slave\'s recovery.conf, ${coordSlaveServers[$i]}:${coordSlaveDirs[$i]}/recovery.conf
 			ssh $pgxcUser@${coordSlaveServers[$i]} "cat >> ${coordSlaveDirs[$i]}/recovery.conf" <<EOF
@@ -1989,6 +2028,10 @@ function pgxc_start_coordinator_slave
     vecho ================================================================
     vecho Initialize coordinator slave $1
 
+	if [ $coordSlave != y ]; then
+		echo Coordinator slaves are not configured.
+		return 1
+	fi
 	local i
 	for ((i=0; i< ${#coordNames[@]}; i++));	do
 		if [ $1 == ${coordNames[$i]} ]; then
@@ -2003,19 +2046,18 @@ function pgxc_start_coordinator_slave
 				return 1
 			fi
 		  	# Start the slave
-			doit ssh $pgxcOwner@${coordSlaveServers[$i]} "pg_ctl start -Z coordinator -D ${coordSlaveDirs[$i]} -o -i > $tmpDir/coord.out"
-			print_initdb_out @{coordSlaveServers[$i]} $tmpDir/coord.out
-			ssh $pgxcOwner@${coordSlaveServers[$i]} rm $tmpDir/coord.out
+			doit ssh $pgxcUser@${coordSlaveServers[$i]} "pg_ctl start -Z coordinator -D ${coordSlaveDirs[$i]} -o -i > $tmpDir/coord.out"
+			do_stdout @{coordSlaveServers[$i]} $tmpDir/coord.out
 		  	# Change the master to synchronous mode
 			vecho Change the master to synchrnous mode, $1
-			ssh $pgxcOwner@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}" <<EOF
+			ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}" <<EOF
 #==========================================================
 # Added to start the slave in sync. mode, $datetime
 synchronous_commit = on
 synchronous_standby_names = '${coordNames[$i]}'
 # End of the addition
 EOF
-			ssh $pgxcOwner@${coordMasterServers[$i]} pg_ctl reload -Z coordinator -D ${coordMasterDirs[$i]}
+			ssh $pgxcUser@${coordMasterServers[$i]} pg_ctl reload -Z coordinator -D ${coordMasterDirs[$i]}
 			return
 		fi
 	done
@@ -2069,15 +2111,15 @@ function pgxc_stop_coordinator_slave
 			if [ $? -eq 0 ]; then
 			    # Switch Master to asynchronous mode.
 				vecho Switching master of $1 at ${coordMasterServer[$i]} to asynchronous replication mode.
-				ssh $pgxcOwner@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}" <<EOF
+				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}" <<EOF
 #=======================================
 # Updated to trun off the slave $datetime
 synchronous_standby_name = ''
 # End of the update
 EOF
-				doit ssh $pgxcOwner@${coordMasterServers[$i]} pg_ctl reload -Z coordinator -D ${coordMasterDirs[$i]}
+				doit ssh $pgxcUser@${coordMasterServers[$i]} pg_ctl reload -Z coordinator -D ${coordMasterDirs[$i]}
 			fi
-			doit ssh $pgxcOwner@${coordSlaveServers[$i]} pg_ctl stop -Z coordinator -D ${coordSlaveDirs[$i]} $immediate
+			doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl stop -Z coordinator -D ${coordSlaveDirs[$i]} $immediate
 			return;
 		fi
 	done
@@ -2139,7 +2181,7 @@ function pgxc_kill_coordinator_slave
 	return 1
 }	
 
-function pgxc_faiover_coordinator
+function pgxc_failover_coordinator
 {
 	# First argument is the coordinator name
     vecho ================================================================
@@ -2147,6 +2189,10 @@ function pgxc_faiover_coordinator
 
 	if [ $# -ne 1 ]; then
 		iecho Specify coordinator name to failover
+		return 1
+	fi
+	if [ coordSlave != y ]; then
+		echo Coordinator slaves are not configured. Cannot failover
 		return 1
 	fi
 
@@ -2171,15 +2217,15 @@ function pgxc_faiover_coordinator
 			  fi
 		  done
 		  # gtm_proxy have to be configured properly
-		  if [ $targetGTMhost == "" ]; then
+		  if [ "$targetGTMhost" == "" ]; then
 			  echo ERROR: gtm_proxy is not configured at the server ${coordSlaveServers[$i]}
 			  return 1
 		  fi
 		  # Now promote the slave
-		  doit ssh $pgxcOwner@${coordSlaveServers[$i]} pg_ctl promote -Z coordinator -D ${coordSlaveDirs[$i]}
+		  doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl promote -Z coordinator -D ${coordSlaveDirs[$i]}
 		  # Reconfigure new master's gtm_proxy
 		  vecho Reconfiguring new gtm_proxy for ${coordSlaveSerers[$i]}:${coordSlaveDirs[$i]}/postgresql.conf
-		  ssh $pgxcOwner@${coordSlaveServers[$i]} "cat >> ${coordSlaveDirs[$i]}/postgresql.conf" <<EOF
+		  ssh $pgxcUser@${coordSlaveServers[$i]} "cat >> ${coordSlaveDirs[$i]}/postgresql.conf" <<EOF
 #=================================================
 # Added to promote, $datetime
 gtm_host = '$targetGTMhost'
@@ -2187,11 +2233,8 @@ gtm_port = $targetGTMport
 # End of addition
 EOF
 		  # Restart the new master
-		  doit ssh $pgxcOwner@${coordSlaveServers[$i]} "pg_ctl restart -Z coordinator -D ${coordSlaveDirs[$i]} -o -i > $tmpDir/coord.out"
-		  if [ $verbose == y ]; then
-			  ssh $pgxcOwner@${coordSlaveServers[$i]} cat $tmpDir/coord.out
-		  fi
-		  ssh $pgxcOwner@${coordSlaveServers[$i]} rm $tmpDir/coord.out
+		  doit ssh $pgxcUser@${coordSlaveServers[$i]} "pg_ctl restart -Z coordinator -D ${coordSlaveDirs[$i]} -o -i > $tmpDir/coord.out"
+		  do_stdout ${coordSlaveServers[$i]} $tmpDir/coord.out
 		  # Update other coordinator with this new one ---> first, clean connection for all the users for all the databases
 		  # Get all the available users
 		  # First, find available coordinator other than this one.
@@ -2204,7 +2247,7 @@ EOF
 				  break
 			  fi
 		  done
-		  if [ $coord_wk != "" ]; then
+		  if [ "$coord_wk" != "" ]; then
 			  # There's at least one coordinator working.  Need to do "CLEAN CONNECTION"
               # Then get all the users
 			  cat > $localTmpDir/command.sql <<EOF
@@ -2266,15 +2309,20 @@ function pgxc_init_datanode_master
 		if [ $1 == ${datanodeNames[$i]} ]; then
 			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2> /dev/null
 			if [ $? -eq 0 ]; then
-				echo ERROR: target datanode master is running now.
+				echo ERROR: target datanode master is running now.  Stop it to configure.
 				return 1
 			fi
-			doit ssh $pgxcOwner@${datanodeMasterServers[$i]} rm -rf ${datanodeMasterDirs[$i]}
-			doit ssh $pgxcOwner@${datanodeMasterServers[$i]} mkdir -p ${datanodeMasterDirs[$i]}
-			doit ssh $pgxcOwner@${datanodeMasterServers[$i]} initdb --nodename ${datanodeNames[$i]}
+			doit ssh $pgxcUser@${datanodeMasterServers[$i]} rm -rf ${datanodeMasterDirs[$i]}
+			doit ssh $pgxcUser@${datanodeMasterServers[$i]} mkdir -p ${datanodeMasterDirs[$i]}
+			doit ssh $pgxcUser@${datanodeMasterServers[$i]} "initdb --nodename ${datanodeNames[$i]} -D {datanodeMasterDirs[$i]} 2&>1 > $tmpDir/initdb.out"
+			print_initdb_out ${datanodeMasterServers[$i]} $tmpDir/initdb.out
 			vecho Configuring ${datanodeMasterServers[$i]}:${datanodeMasterDirs[$i]}/postgresql.conf
 			if [ $datanodeExtraConfig != none ] && [ $datanodeExtraConfig != N/A ];  then
-				ssh $pgxcOwner@${datanodeMasterServer[$j]} "cat >> ${datanodeMasterDir[$i]}/postgresql.conf" < $datnodeExtraConfig
+				ssh $pgxcUser@${datanodeMasterServer[$j]} "cat >> ${datanodeMasterDir[$i]}/postgresql.conf" < $datnodeExtraConfig
+			fi
+			if [ ${datanodeSpecificExtraConfig[$i]} != none ] && [ ${datanodeSpecificExtraConfig[$i]} != N/A ]; then
+				vecho Configuring $pgxcUser@${datanodeMasterServers[$i]}/postgresql.conf using ${datanodeSpecificExtraConfig[$i]}
+				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/postgresql.conf" < ${datanodeSpecificExtraConfig[$i]}
 			fi
 		    # Get effective GTM port and host.   If gtm_proxy is not found, then connect to GTM
 			local j
@@ -2288,7 +2336,9 @@ function pgxc_init_datanode_master
 				fi
 			done
 # Need to configure replication, like coordinator --> Fix this later!!
-			ssh $pgxcOwner@${datanodeMasterServer[$j]} "cat >> ${datanodeMasterDirs[$i]}/postgresql.conf" <<EOF
+			ssh $pgxcUser@${datanodeMasterServer[$j]} "cat >> ${datanodeMasterDirs[$i]}/postgresql.conf" <<EOF
+#===========================================
+# Added at initialization. $datetime
 log_destination = 'stderr'
 logging_collector = on
 log_directory = 'pg_log'
@@ -2298,16 +2348,50 @@ max_connections = 1000
 gtm_host = '$targetGTMhost'
 gtm_port = $targetGTMport
 EOF
-			vecho Configuring ${datanodeMasterServers[$i]}:${coordMasterDirs[$i]}/pg_hba.conf
-			local j
-			if [ $datanodeExtraPgHba != "" ]; then
-				ssh $pgxcOwner@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/pg_hba.conf" < $datanodeExtraPgHba
-			fi
-			for ((j=0; j<${#datanodeListenAddresses[@]}; j++)); do
-				ssh pgxcOwner@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/pg_hba.conf" <<EOF
-host all all ${datanodeListenAddresses[$j]}
+			# Additional initialization for log_shipping.
+			if [ $datanodeSlave == y ] && [ ${datanodeSlaveServers[$i]} != none ] && [ ${datanodeSlaveServers[$i]} != N/A ]; then
+				# At least cleanup remote archive directory.
+				pgxc_clean_dir ${datanodeSlaveServers[$i]} ${datanodeArchLogDirs[$i]}
+				# Then setup postgresql.conf
+				ssh $pgxcUser@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/postgresql.conf" <<EOF
+wal_level = hot_standby
+archive_mode = on
+archive_command = 'rsync %p $pgxcUser@${datanodeSlaveServers[$i]}:${datanodeArchLogDirs[$i]}/%f'
+max_wal_senders = ${datanodeMaxWALSenders[$i]}
+# End of Addition
 EOF
+			else
+				ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/postgresql.conf" <<EOF
+# End of Addition
+EOF
+			fi
+			vecho Configuring ${datanodeMasterServers[$i]}:${coordMasterDirs[$i]}/pg_hba.conf
+			ssh $pgxcUser@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/pg_hba.conf"  <<EOF
+#=================================================
+# Addition at initialization, $datetime 
+EOF
+			if [ $datanodeExtraPgHba != none ] && [ $datanodeExtraPgHba != N/A ]; then
+				echo -9-
+				vecho Configuring ${datanodeMasterServers[$i]}:${datanodeMasterDirs[$i]}/pg_hba.conf using $datanodeExtraPgHba
+				ssh $pgxcUser@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/pg_hab.conf" < $datanodeExtraPgHba
+			fi
+			if [ ${datanodeSpecificExtraPgHba[$i]} != none ] && [ ${datanodeSpecificExtraPgHba[$i]} != N/A ]; then
+				ssh $pgxcUser@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/pg_hab.conf" < ${coordSpecificExtraPgHba[$i]}
+			fi
+			local j
+			for ((j=0; j<${#datanodePgHbaEntries[@]}; j++)); do
+				ssh $pgxcUser@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}/pg_hba.conf" <<EOF
+host all $pgxcOwner ${datanodeListenAddresses[$j]}
+EOF
+				if [ ${datanodeSlaveServers[$i]} != none ] && [ ${datanodeSlaveServers[$i]} != N/A ]; then
+					ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/pg_hba.conf"  <<EOF
+host replication $pgxcOwner ${datanodePgHbaEntries[$j]} trust
+EOF
+				fi
 			done
+			ssh $pgxcUser@${coordMasterServers[$i]} "cat >> ${coordMasterDirs[$i]}/pg_hba.conf"  <<EOF
+# End of addition
+EOF
 			return
 		fi
 	done
@@ -2333,11 +2417,8 @@ function pgxc_start_datanode_master
 				echo ERROR: target datanode master is running now.
 				return 1
 			fi
-			doit ssh $pgxcOwner@${datanodeMasterServers[$i]} "pg_ctl start -Z datanode -D ${datanodeMasterDirs[$i]} -o -i > $tmpDir/datanode.out"
-			if [ $verbose == y ]; then
-				ssh $pgxcOwner@${datanodeMasterServers[$i]} cat $tmpDir/datanode.out
-			fi
-			ssh $pgxcOwner@${datanodeMasterServers[$i]} rm -f $tmpDir/datanode.out
+			doit ssh $pgxcUser@${datanodeMasterServers[$i]} "pg_ctl start -Z datanode -D ${datanodeMasterDirs[$i]} -o -i > $tmpDir/datanode.out"
+			do_stdout ${datanodeMasterServers[$i]} $tmpDir/datanode.out
 			return
 		fi
 	done
@@ -2358,7 +2439,7 @@ function pgxc_stop_datanode_master
 	local i
 	for ((i=0; i< ${#datanodeNames[@]}; i++)); do
 		if [ $1 == ${datanodeNames[$i]} ];  then
-			doit ssh $pgxcOwner@${datanodeMasterServers[$i]} pg_ctl stop -Z datanode -D ${datanodeMasterDirs[$i]} $immediate
+			doit ssh $pgxcUser@${datanodeMasterServers[$i]} pg_ctl stop -Z datanode -D ${datanodeMasterDirs[$i]} $immediate
 			return
 		fi
 	done
@@ -2385,7 +2466,7 @@ function pgxc_kill_datanode_master
 					kill_all_child_parent ${datanodeMasterServers[$i]} $postmaster_pid
 				fi
 			else
-				echo specified coordinator master does not exist, $1
+				echo Dould not find specified coordinator master, $1
 			fi
 			return
 		fi
@@ -2394,6 +2475,10 @@ function pgxc_kill_datanode_master
 	return 1
 }
 
+# To construct datanode slave, pg_basebackup utility is used, which needs master coordinator running.
+# If the master is not running, then we temporary run it.   After copying the base backup,
+# the the master will be stopped.  Please be sure that coordinator master is initialized properly.
+# If it is running, then it will be restarted to reflect the change to postgresql.conf.
 function pgxc_init_datanode_slave
 {
 	# First argument is the datanode name
@@ -2401,34 +2486,48 @@ function pgxc_init_datanode_slave
     vecho Initialize datanode slave $1
 
 	local i
+	local start_master=n
 	for ((i=0; i< ${#datanodeNames[@]}; i++)); do
 		if [ $1 == ${datanodeNames[$i]} ]; then
 			if [ ${datanodeSlaveServers[$i]} == N/A ]; then
 				echo ERROR: slave for the datanode $1 is not configured.
 				return 1
 			fi
-		    # Coordinator master should be running
+		    # Datanode master should be running
 			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2> /dev/null
 			if [ $? -ne 0 ]; then
-				echo ERROR: corresponding datanode master is not running now, $1
-				return 1
+				start_master=y
 			fi
 		    # Clean slave's directory
-			doit ssh $pgxcOwner@${datanodeSlaverServers[$i]} rm -rf ${datanodeSlaveDirs[$i]}
-			doit ssh $pgxcOwner@${datanodeSlaverServers[$i]} mkdir -p ${datanodeSlaveDirs[$i]}
-		    # Reconfigure master's postgresql.conf
-			vecho -- Reconfigure master\'s postgresql.conf, ${datanodeMasterServers[$i]}:${datanodeMasterDirs[$i]}/postgresql.conf
-			ssh $pgxcOwner@${coordMasterServer[$i]} "cat >> ${datanodeMasterDirs[$i]}/postgresql.conf" <<EOF
-#=======================================
-# Added to setup the slave, $datetime
-wal_level = hot_standby
-archive_mode = on
-archive_command = 'rsync %p $pgxcOwner@${datanodeSlaveServers[$i]}:${datanodeArchLogDirs[$i]}/%f'
-max_wal_senders = 10
+			doit ssh $pgxcUser@${datanodeSlaverServers[$i]} rm -rf ${datanodeSlaveDirs[$i]}
+			doit ssh $pgxcUser@${datanodeSlaverServers[$i]} mkdir -p ${datanodeSlaveDirs[$i]}
+
+		    # if the master is not running, we just start it and then stop it.
+			if [ $start_master == y ]; then
+				iecho Starting the datanode master to obtain base backup
+				doit ssh $pgxcUser@${datanodeMasterServers[$i]} "pg_ctl start -Z datanode -D ${datanodeMasterDirs[$i]} -o -i > $tmpDir/cmd.out"
+				do_stdout ${datanodeMasterServers[$i]} $tmpDir/cmd.out
+				sleep 2
+			fi
+		    # Obtain base backup of the master
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} rm -rf ${datanodeSlaveDirs[$i]}
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} mkdir -p ${datanodeSlaveDirs[$i]}
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} pg_basebackup -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} -D ${datanodeSlaveDirs[$i]} -x
+
+		    # Configure recovery.conf of the slave
+			vecho -- Configure slave\'s recovery.conf, ${datanodeSlaveServers[$i]}:${datanodeSlaveDirs[$i]}/recovery.conf
+			ssh $pgxcUser@${datanodeSlaveServers[$i]} "cat >> ${datanodeSlaveDirs[$i]}/recovery.conf" <<EOF
+#==========================================
+# Added to initialize the slave, $datetime
+standby_mode = on
+primary_conninfo = 'host = ${datanodeMasterServers[$i]} port = ${datanodePorts[$i]} user = $pgxcOwner application_name = ${datanodeNames[$i]}'
+restore_command = 'cp ${datanodeArchLogDirs[$i]}/%f %p'
+archive_cleanup_command = 'pg_archivecleanup ${datanodeArchLogDirs[$i]} %r'
 EOF
+
 		    # Configure slave's postgresql.conf
 			vecho -- Configure slave\'s postgresql.conf, ${doatanodeSlaveServers[$i]}:${datanodeSlaveDirs[$i]}/postgresql.conf
-			ssh $pgxcOwner@${datanodeSlaveServers[$i]} "cat >> ${datanodeSlaveDirs[$i]}/postgresql.conf" <<EOF
+			ssh $pgxcUser@${datanodeSlaveServers[$i]} "cat >> ${datanodeSlaveDirs[$i]}/postgresql.conf" <<EOF
 #==========================================
 # Added to startup the slave, $dtetime
 hot_standby = on
@@ -2437,7 +2536,7 @@ EOF
 		fi
 		return
 	done
-	echo ERROR: specified coordinator does not exist, $1
+	echo ERROR: specified coordinator is not configured, $1
 	return 1
 }
 
@@ -2447,6 +2546,10 @@ function pgxc_start_datanode_slave
     vecho ================================================================
     vecho Initialize coordinator slave $1
 
+	if [ $datanodeSlave != y ]; then
+		echo Datanode slaves are not configured
+		return 1
+	fi
 	local i
 	for ((i=0; i< ${#datanodeNames[@]}; i++)); do
 		if [ $1 == ${datanodeNames[$i]} ]; then
@@ -2461,19 +2564,18 @@ function pgxc_start_datanode_slave
 				return 1
 			fi
 		    # Start the slave
-			doit ssh $pgxcOwner@${datanodeSlaveServers[$i]} "pg_ctl start -Z datanode -D ${datanodeSlaveDirs[$i]} -o -i > $tmpDir/coord.out"
-			ssh $pgxcOwner@${datanodeSlaveServers[$i]} cat $tmpDir/coord.out
-			ssh $pgxcOwner@${datanodeSlaveServers[$i]} rm $tmpDir/coord.out
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} "pg_ctl start -Z datanode -D ${datanodeSlaveDirs[$i]} -o -i > $tmpDir/coord.out"
+			do_stdout ${datanodeSlaveServers[$i]} $tmpDir/coord.out
 		    # Change the master to synchronous mode
 			vecho Change the master to synchrnous mode, $1
-			ssh $pgxcOwner@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}" <<EOF
+			ssh $pgxcUser@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}" <<EOF
 #==========================================================
 # Added to start the slave in sync. mode, $datetime
 synchronous_commit = on
 synchronous_standby_names = '${datanodeNames[$i]}'
 # End of the addition
 EOF
-			ssh $pgxcOwner@${datanodeMasterServers[$i]} pg_ctl reload -Z datanode -D ${datanodeMasterDirs[$i]}
+			ssh $pgxcUser@${datanodeMasterServers[$i]} pg_ctl reload -Z datanode -D ${datanodeMasterDirs[$i]}
 			return
 		fi
 	done
@@ -2488,6 +2590,11 @@ function pgxc_stop_datanode_slave
     vecho ================================================================
     vecho Initialize datanode slave $1
 
+
+	if [ $datanodeSlave != y ]; then
+		echo Datanode slaves are not configured
+		return 1
+	fi
 	local i
 	for ((i=0; i< ${#datanodeNames[@]}; i++)); do
 		if [ $1 == ${datanodeNames[$i]} ];  then
@@ -2499,15 +2606,15 @@ function pgxc_stop_datanode_slave
 			if [ $? -eq 0 ]; then
 			    # Switch Master to asynchronous mode.
 				vecho Switching master of $1 at ${datanodeMasterServer[$i]} to asynchronous replication mode.
-				ssh $pgxcOwner@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}" <<EOF
+				ssh $pgxcUser@${datanodeMasterServers[$i]} "cat >> ${datanodeMasterDirs[$i]}" <<EOF
 #=======================================
 # Updated to trun off the slave $datetime
 synchronous_standby_name = ''
 # End of the update
 EOF
-				doit ssh $pgxcOwner@${datanodeMasterServers[$i]} pg_ctl reload -Z datanode -D ${datanodeMasterDirs[$i]}
+				doit ssh $pgxcUser@${datanodeMasterServers[$i]} pg_ctl reload -Z datanode -D ${datanodeMasterDirs[$i]}
 			fi
-			doit ssh $pgxcOwner@${datanodeSlaveServers[$i]} pg_ctl stop -Z datanode -D ${datanodeSlaveDirs[$i]} $immediate
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} pg_ctl stop -Z datanode -D ${datanodeSlaveDirs[$i]} $immediate
 			return;
 		fi
 	done
@@ -2522,10 +2629,18 @@ function pgxc_kill_datanode_master
     vecho Initialize datanode slave $1
 
 	local i
+	local postmaster_pid
 	for ((i=0; i< ${#datanodeNames[@]}; i++)); do
 		if [ $1 == ${datanodeNames[$i]} ]; then
-			doit ssh $pgxcOwner@${datanodeMasterServers[$i]} pg_ctl stop -Z datanode -D ${datanodeMasterDirs[$i]} -m immediate
-			return;
+			if [ ${datanodeMasterServers[$i]} != none ] && [ ${datanodeMasterServers[$i]} != N/A ]; then
+				postmaster_pid=`get_postmaster_pid ${datanodeMasterServers[$i]} ${datanodeMasterDirs[$i]}`
+				if [ $postmaster_pid != none ]; then
+					kill_all_child_parent ${datanodeMasterServers[$i]} $postmaster_pid
+				fi
+			else
+				echo specified coordinator master does not exist, $1
+			fi
+			return
 		fi
 	done
 	echo ERROR: specified datanode master is not configured, $1
@@ -2533,11 +2648,20 @@ function pgxc_kill_datanode_master
 }
 
 
-function pgxc_faiover_datanode
+function pgxc_failover_datanode
 {
 	# First argument is the datanode name
     vecho ================================================================
     vecho Initialize datanode slave $1
+
+	if [ $# -ne 1 ]; then
+		iecho Specify datanode name to failover
+		return 1
+	fi
+	if [ datanodeSlave != y ]; then
+		echo Datanode slaves are not configured. Cannot failover
+		return 1
+	fi
 
 	local i
 	for ((i=0; i< ${#datanodeNames[@]}; i++)); do
@@ -2565,10 +2689,10 @@ function pgxc_faiover_datanode
 				return 1
 			fi
 		    # Now promote the slave
-			doit ssh $pgxcOwner@${datanodeSlaveServers[$i]} pg_ctl promote -Z datanode -D ${datanodeSlaveDirs[$i]}
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} pg_ctl promote -Z datanode -D ${datanodeSlaveDirs[$i]}
 		    # Reconfigure new master's gtm_proxy
 			vecho Reconfiguring new gtm_proxy for ${datanodeSlaveSerers[$i]}:${datanodeSlaveDirs[$i]}/postgresql.conf
-			ssh $pgxcOwner@${datanodeSlaveServers[$i]} "cat >> ${datanodeSlaveDirs[$i]}/postgresql.conf" <<EOF
+			ssh $pgxcUser@${datanodeSlaveServers[$i]} "cat >> ${datanodeSlaveDirs[$i]}/postgresql.conf" <<EOF
 #=================================================
 # Added to promote, $datetime
 gtm_host = '$targetGTMhost'
@@ -2576,9 +2700,8 @@ gtm_port = $targetGTMport
 # End of addition
 EOF
 		    # Restart the new master
-			doit ssh $pgxcOwner@${datanodeSlaveServers[$i]} "pg_ctl restart -Z datanode -D ${datanodeSlaveDirs[$i]} -o -i > $tmpDir/datanode.out"
-			ssh $pgxcOwner@${datanodeSlaveServers[$i]} cat $tmpDir/datanode.out
-			ssh $pgxcOwner@${datanodeSlaveServers[$i]} rm $tmpDir/datanode.out
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} "pg_ctl restart -Z datanode -D ${datanodeSlaveDirs[$i]} -o -i > $tmpDir/datanode.out"
+			do_stdout ${datanodeSlaveServers[$i]} $tmpDir/datanode.out
 		    # Update other datanode with this new one ---> first, clean connection for all the users for all the databases
 		    # Get all the available users
 		    # First, find available coordinator.  There must be at least one.
@@ -2648,22 +2771,30 @@ EOF
 #=======================================================
 
 # Handle options
+progname=$0
 moretodo=y
 while [ $moretodo == y ]; do
 	if [ $# -gt 0 ]; then
 		case $1 in
 			-v )
 				shift;
-				verbose=y;;
+				verbose=y;
+				continue;;
 			--verbose )
 				shift;
-				verbose=y;;
+				verbose=y;
+				continue;;
+			--silent )
+				verbose=n;
+				continue;;
 			-d ) # debug option
 				shift;
-				DEBUG=y;;
+				DEBUG=y;
+				continue;;
 			--debug )
 				shift;
-				DEBUG=y;;
+				DEBUG=y;
+				continue;;
 			-c ) # Configuraton file
 				shift;
 				if [ $# -le 0 ]; then
@@ -2672,7 +2803,8 @@ while [ $moretodo == y ]; do
 				else
 					$configFile=$1
 					shift
-				fi;;
+				fi;
+				continue;;
 			--configuration ) # Configuraion file
 				shift;
 				if [ $# -le 0 ]; then
@@ -2681,14 +2813,23 @@ while [ $moretodo == y ]; do
 				else
 					$configFile=$1
 					shift
-				fi;;
-			-i ) # interactive
+				fi;
+				continue;;
+			-i ) # input_file
 				shift;
-				interactive=y
+				if [ "$1" == "" ]; then
+					echo Epecify input file
+				else
+					$progname < $1
+				fi
 				continue;;
 			--interactive ) # interactive
 				shift;
 				interactive=y
+				continue;;
+			--batch )
+				shift
+				interactive=n
 				continue;;
 			* )
 				moretodo=n
@@ -2714,7 +2855,7 @@ makeServerList
 # For interactive operation ---> Finally this should be a part of pgxc_ctl interactive command
 interactive=y
 while [ 1 ]; do
-	echo -n $xc_prompt ""
+	echo -n "$xc_prompt"
 	read cmdname cmdparam
 
 	if [ "$cmdname" == "" ];  then
