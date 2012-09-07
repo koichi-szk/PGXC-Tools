@@ -267,38 +267,49 @@ function doit
 
 function doall
 {
+	local i
     vecho doall target: "(" ${allServers[@]} ")"
     for (( i=0; i< ${#allServers[@]}; i++ )); do
-      vecho "... ${allServers[$i]}: $* ..."
-      ssh $pgxcUser@${allServers[$i]} $*
+		if [ ${allServers[$i]} != none ] && [ ${allServers[$i]} != N/A ]; then
+			vecho "... ${allServers[$i]}: $* ..."
+			ssh $pgxcUser@${allServers[$i]} $*
+		fi
     done
 }
 
 function Doall
 {
+	local i
     vecho Doall target: "(" ${DoallTarget[@]} ")"
     for (( i=0; i< ${#DoallTarget[@]}; i++ )); do
-		vecho "${DoallTarget[$i]}: $* ..."
-		ssh $pgxcUser@${DoallTarget[$i]} $*
+		if [ ${DoallTarget[$i]} != none ] && [ ${DoallTarget[$i]} != N/A ]; then
+			vecho "${DoallTarget[$i]}: $* ..."
+			ssh $pgxcUser@${DoallTarget[$i]} $*
+		fi
     done
 }
 
 function cpall
 {
+	local i
     vecho cpall target: "(" ${allServers[@]} ")"
-
     for (( i=0; i < ${#allServers[@]}; i++ )); do
-		vecho scp -r $1 $pgxcUser@${allServers[$i]}:$2
-		scp -r $1 $pgxcUser@${allServers[$i]}:$2
+		if [ ${allServers[$i]} != none ] && [ ${allServers[$i]} != N/A ]; then
+			vecho scp -r $1 $pgxcUser@${allServers[$i]}:$2
+			scp -r $1 $pgxcUser@${allServers[$i]}:$2
+		fi
     done
 }
 
 function Cpall
 {
+	local i
     vecho Cpall target: "(" ${CpallTarget[@]} ")"
     for (( i=0; i< ${#CpallTarget[@]}; i++ )); do
-		vecho scp -r $1 $pgxcUser@${CpallTarget[$i]}:$2
-		scp -r $1 $pgxcUser@${CpallTarget[$i]}:$2
+		if [ ${CpallTarget[$i]} != none ] && [ ${CpallTarget[$i]} != N/A ]; then
+			vecho scp -r $1 $pgxcUser@${CpallTarget[$i]}:$2
+			scp -r $1 $pgxcUser@${CpallTarget[$i]}:$2
+		fi
     done
 }
 
@@ -2372,7 +2383,6 @@ function pgxc_init_coordinator_slave
 			if [ $? -ne 0 ]; then
 				start_master=y
 			fi
-			echo restart: $restart
   		    # Clean slave's directory
 			doit ssh $pgxcUser@${coordSlaveServers[$i]} rm -rf ${coordSlaveDirs[$i]}
 			doit ssh $pgxcUser@${coordSlaveServers[$i]} mkdir -p ${coordSlaveDirs[$i]}
@@ -2501,7 +2511,7 @@ function pgxc_stop_coordinator_slave
 {
 	# First argument is the coordinator name
     vecho ================================================================
-    vecho Initialize coordinator slave $1
+    vecho Stop coordinator slave $1
 
 	if [ $coordSlave != y ]; then
 		iecho Coordinator slaves are not configured.
@@ -2544,7 +2554,7 @@ function pgxc_stop_coordinator_slave_all
 {
 	# First argument is the coordinator name
     vecho ================================================================
-    vecho Start all the coordinator slaves
+    vecho Stop all the coordinator slaves
 
 	if [ $coordSlave != y ]; then
 		iecho Coordinator slaves are not configured.
@@ -2603,10 +2613,10 @@ function pgxc_failover_coordinator			# Not tested yet.   Shoudl be tested after 
     vecho Initialize coordinator slave $1
 
 	if [ $# -ne 1 ]; then
-		iecho Specify coordinator name to failover
+		echo Specify coordinator name to failover
 		return 1
 	fi
-	if [ coordSlave != y ]; then
+	if [ $coordSlave != y ]; then
 		echo Coordinator slaves are not configured. Cannot failover
 		return 1
 	fi
@@ -2615,7 +2625,7 @@ function pgxc_failover_coordinator			# Not tested yet.   Shoudl be tested after 
 	for ((i=0; i< ${#coordNames[@]}; i++));	do
 		if [ $1 == ${coordNames[$i]} ]; then
 			if [ ${coordSlaveServers[$i]} == none ] || [ ${coordSlaveServers[$i]} == N/A ]; then
-			  echo ERROR: Coordinator $1 slave is not configured
+			  echo ERROR: Coordinator $1 slave is not configured.  Cannot failover.
 			  return 1
 		  fi
 		  # Find the new local gtm_proxy
@@ -2626,12 +2636,12 @@ function pgxc_failover_coordinator			# Not tested yet.   Shoudl be tested after 
 		  targetGTMport=0
 		  for ((j=0; j<${#gtmProxyServers[@]}; j++)); do
 			  if [ ${coordSlaveServers[$i]} == ${gtmProxyServers[$j]} ]; then
-				  targetGTMhost= ${gtmProxyServers[$j]}
-				  targetGTMport= ${gtmProxyPorts[$j]}
+				  targetGTMhost=${gtmProxyServers[$j]}
+				  targetGTMport=${gtmProxyPorts[$j]}
 				  break
 			  fi
 		  done
-		  # gtm_proxy have to be configured properly
+		  # gtm_proxy has to be configured properly
 		  # This can be a bit more flexible so that each component can connect to GTM directly if
 		  # gtm_proxy is not configured locally.
 		  if [ "$targetGTMhost" == none ]; then
@@ -2658,9 +2668,9 @@ EOF
 		  local coord_wk=none
 		  local coord_port=0
 		  for ((j=0; j< ${#coordMasterServers[@]}; j++)); do
-			  if [ $j -ne -$i ]; then
-				  coord_wk= ${coordMasterServers[$j]}
-				  coord_port= ${coordPorts[$j]}
+			  if [ $j != $i ]; then
+				  coord_wk=${coordMasterServers[$j]}
+				  coord_port=${coordPorts[$j]}
 				  break
 			  fi
 		  done
@@ -2674,13 +2684,13 @@ select usename from pg_user;
 EOF
 			  psql -p $coord_port -h $coord_wk postgres $pgxcOwner -f $localTmpDir/command.sql -o $localTmpDir/command.out >/dev/null
 			  local users
-			  users= `cat $localTmpDir/command.out`
+			  users=`cat $localTmpDir/command.out`
 			  rm $localTmpDir/command.sql $localTmpDir/command.out
 		  	  # Clean all the pooler connections and update the node registration
 			  for ((j=0; j< ${#coordMasterServers[@]}; j++)); do
 				  for user in $users; do
-					  if [ $j -ne $i ]; then
-						  psql -p ${coordPorts[$j]} -h ${coordMasterServers[$j]} postgres $pgxcOwner -c "CLEAN CONNECTION TO ALL FOR USER $user"
+					  if [ $j != $i ]; then
+						  psql -p ${coordPorts[$j]} -h ${coordMasterServers[$j]} postgres $pgxcOwner -c "CLEAN CONNECTION TO ALL TO USER $user"
 					  fi
 				  done
 				  psql -p ${coordPorts[$j]} -h ${coordMasterServers[$j]} postgres $pgxcOwner -c "ALTER NODE ${coordNames[$i]} WITH (HOST='${coordSlaveHosts[$i]}', PORT=${coordPorts[$i]})"
@@ -3434,8 +3444,12 @@ function stop_all
 
 function clean_all
 {
+	local immediate_bk
+	immediate_bk="$immediate"
+	immediate="-m immediate"
 	stop_all
 	pgxc_clean_node_all
+	immediate="$immediate_bk"
 }
 
 ###############################################################################
