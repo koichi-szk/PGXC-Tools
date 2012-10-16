@@ -1736,6 +1736,7 @@ function pgxc_start_gtm_master
 	vecho Starting GTM Master
 
 	doit ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcOwner -9 gtm > /dev/null 2>&1"
+	doit ssh $pgxcUser@$gtmMasterServer "rm -f $gtmMasterDir/register.node"
 	doit ssh $pgxcUser@$gtmMasterServer "gtm_ctl start -Z gtm -D $gtmMasterDir > $tmpDir/gtm.out"
 	do_stdout $gtmMasterServer $tmpDir/gtm.out
 }
@@ -1755,6 +1756,7 @@ function pgxc_start_gtm_slave
 		return 1
 	fi
 	doit ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcOwner -9 gtm >/dev/null 2>&1"
+	doit ssh $pgxcUser@$gtmSlaveServer "rm -f $gtmSlaveDir/register.node"
 	doit ssh $pgxcUser@$gtmSlaveServer "gtm_ctl start -Z gtm -D $gtmSlaveDir > $tmpDir/gtm.out"
 	do_stdout $gtmSlaveServer $tmpDir/gtm.out
 }
@@ -2271,7 +2273,7 @@ function pgxc_stop_coordinator_master
 function pgxc_stop_coordinator_master_all
 {
     vecho ================================================================
-    vecho Start all the coordinator masters
+    vecho Stop all the coordinator masters
 
 	local i
 	for ((i=0; i< ${#coordNames[@]}; i++)); do
