@@ -119,7 +119,7 @@ gtmProxy=y				# Specify y if you conifugre at least one GTM proxy.   You may not
 						# as none), then gtmProxy value will be set to "n" and all the entries will be set to
 						# empty values.
 gtmProxyNames=(gtm_pxy1 gtm_pxy2 gtm_pxy3 gtm_pxy4)	# No used if it is not configured
-gtmProxyServers=(node01 node02 node03 node04)			# Specify none if you dont' configure it.
+gtmProxyServers=(node06 node07 node08 node09)			# Specify none if you dont' configure it.
 gtmProxyPorts=(20001 20001 20001 20001)				# Not used if it is not configured.
 gtmProxyDirs=($gtmProxyDir $gtmProxyDir $gtmProxyDir $gtmProxyDir)	# Not used if it is not configured.
 
@@ -148,7 +148,7 @@ coordPgHbaEntries=(192.168.1.0/24)				# Assumes that all the coordinator (master
 # and/or coordSpecificExtraPgHba variables.
 
 #---- Master -------------
-coordMasterServers=(node01 node02 node03 node04)		# none means this master is not available
+coordMasterServers=(node06 node07 node08 node09)		# none means this master is not available
 coordMasterDirs=($coordMasterDir $coordMasterDir $coordMasterDir $coordMasterDir)
 coordMaxWALsernder=5	# max_wal_senders: needed to configure slave. If zero value is specified,
 						# it is expected to supply this parameter explicitly by external files
@@ -162,7 +162,7 @@ coordSlave=y			# Specify y if you configure at least one coordiantor slave.  Oth
 						# If no effective server names are found (that is, every servers are specified as none),
 						# then coordSlave value will be set to n and all the following values will be set to
 						# empty values.
-coordSlaveServers=(node02 node03 node04 node01)			# none means this slave is not available
+coordSlaveServers=(node07 node08 node09 node06)			# none means this slave is not available
 coordSlaveDirs=($coordSlaveDir $coordSlaveDir $coordSlaveDir $coordSlaveDir)
 coordArchLogDirs=($coordArchLogDir $coordArchLogDir $coordArchLogDir $coordArchLogDir)
 
@@ -185,7 +185,10 @@ datanodeSlaveDir=$HOME/pgxc/nodes/dn_slave
 datanodeArchLogDir=$HOME/pgxc/nodes/datanode_archlog
 
 #---- Overall ---------------
-primaryDatanode=datanode1				# Primary Node.
+#primaryDatanode=datanode1				# Primary Node.
+# At present, xc has a priblem to issue ALTER NODE against the primay node.  Until it is fixed, the test will be done
+# without this feature.
+primaryDatanode=N/A						# Primary Node.
 datanodeNames=(datanode1 datanode2 datanode3 datanode4)
 datanodePorts=(20008 20009 20008 20009)	# Master and slave use the same port!
 datanodePgHbaEntries=(192.168.1.0/24)	# Assumes that all the coordinator (master/slave) accepts
@@ -198,7 +201,7 @@ datanodePgHbaEntries=(192.168.1.0/24)	# Assumes that all the coordinator (master
 # and/or datanodeSpecificExtraPgHba variables.
 
 #---- Master ----------------
-datanodeMasterServers=(node01 node02 node03 node04)	# none means this master is not available.
+datanodeMasterServers=(node06 node07 node08 node09)	# none means this master is not available.
 													# This means that there should be the master but is down.
 													# The cluster is not operational until the master is
 													# recovered and ready to run.	
@@ -216,7 +219,7 @@ datanodeSlave=y			# Specify y if you configure at least one coordiantor slave.  
 						# If no effective server names are found (that is, every servers are specified as none),
 						# then datanodeSlave value will be set to n and all the following values will be set to
 						# empty values.
-datanodeSlaveServers=(node02 node03 node04 node01)	# value none means this slave is not available
+datanodeSlaveServers=(node07 node08 node09 node06)	# value none means this slave is not available
 datanodeSlaveDirs=($datanodeSlaveDir $datanodeSlaveDir $datanodeSlaveDir $datanodeSlaveDir)
 datanodeArchLogDirs=( $datanodeArchLogDir $datanodeArchLogDir $datanodeArchLogDir $datanodeArchLogDir )
 
@@ -1697,10 +1700,10 @@ EOF
 function pgxc_init_gtm_slave
 {
     vecho ================================================================
-    vecho GTM Slave initialize
+    vecho $progname:$0 GTM Slave initialize
 
-	if [ $gtmSlaveServer == N/A ]; then
-		echo ERROR: GTM Slave is not configured.
+	if [ "$gtmSlave" != "y" ] || [ "$gtmSlaveServer" == "N/A" ] || [ "$gtmSlaverServer" == "none" ] ; then
+		echo $progname:$0 ERROR: GTM Slave is not configured.
 		return 1
 	fi
     doit ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcOwner -9 gtm > /dev/null 2>&1"
@@ -1740,10 +1743,10 @@ function pgxc_start_gtm_master
 function pgxc_start_gtm_slave
 {
 	vecho ================================================================
-	vecho Starting GTM Slave
+	vecho $progname:$0 Starting GTM Slave
 
 	if [ $gtmSlaveServer == none ]; then
-		echo ERROR: GTM slave is not configured.
+		echo $progname:$0 ERROR: GTM slave is not configured.
 		return 1
 	fi
 	doit ssh $pgxcUser@$gtmMasterServer "gtm_ctl status -Z gtm -D $gtmMasterDir > /dev/null 2> /dev/null"
@@ -1767,7 +1770,7 @@ function pgxc_stop_gtm_master
 function pgxc_stop_gtm_slave
 {
 	if [ $gtmSlaveServer == none ] || [ $gtmSlaveServer == N/A ]; then
-		echo ERROR: GTM slave is not configured.
+		echo $progname:$0 ERROR: GTM slave is not configured.
 		return 1
 	fi
 	vecho ================================================================
@@ -1785,7 +1788,7 @@ function pgxc_kill_gtm_master
 function pgxc_kill_gtm_slave
 {
 	if [ $gtmSlaveServer == none ] || [ $gtmSlaveServer == N/A ]; then
-		echo ERROR: GTM slave is not configured.
+		echo $progname:$0 ERROR: GTM slave is not configured.
 		return 1
 	fi
 	vecho ================================================================
@@ -2049,7 +2052,7 @@ function pgxc_reconnect_gtm_proxy
 # Updated due to GTM Proxy reconnect
 #        $datetime
 gtm_host = $gtmMasterServer
-gtm_port = $gtmMasterServer
+gtm_port = $gtmMasterPort
 #----End of reconfiguration -------------------------
 EOF
 			return
@@ -2367,7 +2370,11 @@ function pgxc_init_coordinator_slave
     vecho Initialize coordinator slave $1
 
 	if [ $# -ne 1 ]; then
-		iecho Specify coordinator ndoe name
+		echo Specify coordinator node name
+		return 1
+	fi
+	if [ "$coordSlave" != "y" ]; then
+		echo Coordinator Slave is not configured.
 		return 1
 	fi
 	local i
@@ -2413,7 +2420,7 @@ EOF
 			vecho -- Configure slave\'s postgresql.conf, ${coordSlaveServers[$i]}:${coordSlaveDirs[$i]}/postgresql.conf
 			ssh $pgxcUser@${coordSlaveServers[$i]} "cat >> ${coordSlaveDirs[$i]}/postgresql.conf" <<EOF
 #==========================================
-# Added to initialize the slave, $dtetime
+# Added to initialize the slave, $datetime
 hot_standby = on
 port = ${coordPorts[$i]}
 EOF
@@ -2611,17 +2618,19 @@ function pgxc_kill_coordinator_slave
 # Instead, you should disable the slave.
 function pgxc_failover_coordinator
 {
+	local fn=pgxc_failover_coordinator
+
 	# First argument is the coordinator name
-	decho called: $0 $*
+	decho called: $fn $*
     vecho ================================================================
-    vecho Initialize coordinator slave $1
+    vecho Failover coordinator $1
 
 	if [ $# -ne 1 ]; then
-		echo $progname:$0 Error: Specify coordinator name to failover
+		echo $progname:$fn Error: Specify coordinator name to failover
 		return 1
 	fi
 	if [ $coordSlave != y ]; then
-		echo $progname:$0 Coordinator slaves are not configured. Cannot failover
+		echo $progname:$fn Coordinator slaves are not configured. Cannot failover
 		return 1
 	fi
 
@@ -2629,7 +2638,7 @@ function pgxc_failover_coordinator
 	for ((i=0; i< ${#coordNames[@]}; i++));	do
 		if [ $1 == ${coordNames[$i]} ]; then
 			if [ ${coordSlaveServers[$i]} == none ] || [ ${coordSlaveServers[$i]} == N/A ]; then
-				echo $progname:$0: ERROR, Coordinator $1 slave is not configured.  Cannot failover.
+				echo $progname:$fn: ERROR, Slave for the coordinator $1 is not configured.  Cannot failover.
 				return 1
 			fi
 			decho "Target coordinator slave to failover:" ${coordNames[$i]} "at" ${coordSlaveServers[$i]}
@@ -2651,13 +2660,13 @@ function pgxc_failover_coordinator
 		    # gtm_proxy is not configured locally.
 			decho "New GTM Proxy:" "$targetGTMHost":"$targetGTMPort"
 			if [ "$targetGTMhost" == none ]; then
-				echo $progname:$0: ERROR, gtm_proxy is not configured at the server ${coordSlaveServers[$i]}.  Cannot failover.
+				echo $progname:$fn: ERROR, gtm_proxy is not configured at the server ${coordSlaveServers[$i]}.  Cannot failover.
 				return 1
 			fi
 		    # Now promote the slave
 			vecho $0: Promoting coordinator slave at ${coordSlaveServers[$i]}:${coordSlaveDirs[$i]}
 			doit gtm_clean unregister -Z coordinator -p $gtmMasterPort -h gtmMasterServer ${coordNames[$i]}
-			doit ssh $pgxcUser@$gtmMasterServer rm -f $gtmMasterDir/register.node
+			# doit ssh $pgxcUser@$gtmMasterServer rm -f $gtmMasterDir/register.node
 			doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl promote -Z coordinator -D ${coordSlaveDirs[$i]}
 			ssh $pgxcUser@${coordSlaveServers[$i]} rm -rf $tmpDir/cmd.out
 			vecho done
@@ -2674,10 +2683,10 @@ gtm_port = $targetGTMport
 # End of addition
 EOF
 			vecho done
-			doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl stop -w -Z coordinator -D ${coordSlaveDirs[$i]} -o -i -m immediate
-			vecho Starting ${coordNames[$i]} at ${coordSlaveServers[$i]}
-			doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl start -Z coordinator -D ${coordSlaveDirs[$i]} -w -o -i > $localTmpDir/cmd.out 2>&1 &
-			sleep 2
+			# doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl stop -w -Z coordinator -D ${coordSlaveDirs[$i]} -o -i -m immediate
+			vecho Restarting ${coordNames[$i]} at ${coordSlaveServers[$i]}
+			doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl restart -Z coordinator -D ${coordSlaveDirs[$i]} -w -o -i > $localTmpDir/cmd.out 2>&1 &
+			sleep 1
 			doit cat $localTmpDir/cmd.out
 			doit rm -f $localTmpDir/cmd.out
 
@@ -2696,24 +2705,13 @@ coordSlaveServers=( ${coordSlaveServers[@]} )
 coordSlaveDirs=( ${coordSlaveDirs[@]} )
 # End of the update
 EOF
-
 		    # Update other coordinators with this new one ---> first, clean connection for all the users for all the databases
 		    # Get all the available users --> Use this coordinator to get usernam
 			# It may be better to clean connections.  However, we found that clean connection is not stable enough when some node
 			# is gone.   We will wait until it is more stable.
 			# It is not clean but I'd like to leave these code for future improvement.
 			vecho Update other coordinators with new coordinator configuration.
-#			cat > $localTmpDir/command.sql <<EOF
-#\pset tuples_only on
-#select usename from pg_user;
-#\q
-#EOF
-#			doit psql -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} postgres $pgxcOwner -f $localTmpDir/command.sql -o $localTmpDir/command.out >/dev/null
-#			local users
-#			users=`cat $localTmpDir/command.out`
-#			rm -f $localTmpDir/command.sql $localTmpDir/command.out
-		  	# Clean all the pooler connections and update the node configuration
-#			vecho Clean all the pooler connections and update the node configuration
+			vecho Clean all the pooler connections and update the node configuration
 			for ((j=0; j< ${#coordMasterServers[@]}; j++)); do
 				if [ "${coordMasterServers[$j]}" != none ] && [ "${coordMasterServers[$j]}" != N/A ]; then
 					pgxc_monitor -Z node -p ${coordPorts[$j]} -h ${coordMasterServers[$j]} -U $pgxcOwner -d postgres
@@ -2736,6 +2734,7 @@ EOF
 					# for the current coordinator is running healthy.
 					cat > $localTmpDir/cmd.sql <<EOF
 ALTER NODE ${coordNames[$i]} WITH (HOST='${coordMasterServers[$i]}', PORT=${coordPorts[$i]});
+select pgxc_pool_reload();
 \q
 EOF
 					cat $localTmpDir/cmd.sql
@@ -2996,6 +2995,15 @@ function pgxc_init_datanode_slave
     vecho ================================================================
     vecho Initialize datanode slave $1
 
+	if [ $# -ne 1 ]; then
+		echo Specify coordinator node name
+		return 1;
+	fi
+	if [ "$datanodeSlave" != "y" ]; then
+		echo Datanode Slave is not configured.
+		return 1
+	fi
+
 	local i
 	local start_master=n
 	for ((i=0;i<${#datanodeNames[@]};i++)); do
@@ -3237,6 +3245,7 @@ function pgxc_kill_datanode_slave
 	return 1
 }
 
+# Select coordinator
 function pgxc_kill_datanode_slave_all
 {
     vecho ================================================================
@@ -3250,7 +3259,184 @@ function pgxc_kill_datanode_slave_all
 	done
 }
 
-function pgxc_failover_datanode		# Not tested yet. Test should be done after CREATE NODE/ALTER NODE is tested.
+selected_coord="none"
+selected_coord_port=0
+selected_coord_host="none"
+function pgxc_select_coordinator
+{
+	local i
+	for ((i=0;i<${#coordMasterServers[@]};i++)); do
+		if [ ${coordMasterServers[$i]} != "none" ] && [ ${coordMasterServers[$i]} != "N/A" ]; then
+			pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
+			if [ $? == 0 ]; then
+				# Need this block not to select failed coordinator.  This may happen if a server fails
+				# and datanode fails over first.
+				selected_coord=${coordNames[$i]}
+				selected_coord_port=${coordPorts[$i]}
+				selected_coord_host=${coordMasterServers[$i]}
+				return 0
+			fi
+		fi
+	done
+	return 1
+}
+
+# Connects to the target ($1) from the coordinator ($2) using specified user ($3).
+# Issue "select 1" using EXECUTE DIRECT.
+# Need to make CLEAN CONNECTION work.
+function pgxc_dummy_connect
+{
+	local i
+	if [ $# -ne 3 ]; then
+		echo pgxc_dummy_connect target coordinator user
+		return 1
+	fi
+	for ((i=0;i<${#coordNames[@]}; i++)); do
+		if [ $2 == ${coordNames[$i]} ]; then
+			cat > $localTmpDir/cmd_dummy.sql <<EOF
+EXECUTE DIRECT ON ($1) 'SELECT 1';
+\q
+EOF
+			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -f $localTmpDir/cmd_dummy.sql postgres $3
+			rm -f $localTmpDir/cmd_dummy.sql
+			return
+		fi
+	done
+	echo ERROR: coordinator $2 not found.
+	return 1
+}
+
+# This failover function assumes that no IP address is carried over from corresponding master server.
+# If IP address can be carried over, then you don't need a section which issues ALTER NODE statement.
+# Instead, you should disable the slave.
+function pgxc_failover_datanode
+{
+	local fn=pgxc_failover_datanode
+
+	# First argument is the datanode name
+	decho called: $fn $*
+    vecho ================================================================
+    vecho Failover datanode $1
+
+	if [ $# -ne 1 ]; then
+		echo $progname:$fn Error: Specify datanode name to failover
+		return 1
+	fi
+	if [ $datanodeSlave != y ]; then
+		echo $progname:$fn Datanode slaves are not configured. Cannot failover
+		return 1
+	fi
+
+	local i
+	for ((i=0; i< ${#datanodeNames[@]}; i++));	do
+		if [ $1 == ${datanodeNames[$i]} ]; then
+			if [ ${datanodeSlaveServers[$i]} == none ] || [ ${datanodeSlaveServers[$i]} == N/A ]; then
+				echo $progname:$0: ERROR, Slave for the datanode $1 is not configured.  Cannot failover.
+				return 1
+			fi
+			decho "Target coordinator slave to failover:" ${datanodeNames[$i]} "at" ${datanodeSlaveServers[$i]}
+		    # Find the new local gtm_proxy
+			local j
+			local targetGTMhost
+			local targetGTMport
+			targetGTMhost=none
+			targetGTMport=0
+			for ((j=0; j<${#gtmProxyServers[@]}; j++)); do
+				if [ ${datanodeSlaveServers[$i]} == ${gtmProxyServers[$j]} ]; then
+					targetGTMhost=${gtmProxyServers[$j]}
+					targetGTMport=${gtmProxyPorts[$j]}
+					break
+				fi
+			done
+		    # gtm_proxy has to be configured properly
+		    # This can be a bit more flexible so that each component can connect to GTM directly if
+		    # gtm_proxy is not configured locally.
+			decho "New GTM Proxy:" "$targetGTMHost":"$targetGTMPort"
+			if [ "$targetGTMhost" == none ]; then
+				echo $progname:$fn: ERROR, gtm_proxy is not configured at the server ${datanodeSlaveServers[$i]}.  Cannot failover.
+				return 1
+			fi
+		    # Now promote the slave
+			vecho $0: Promoting datnode slave at ${datanodeSlaveServers[$i]}:${datanodeSlaveDirs[$i]}
+			doit gtm_clean unregister -Z datanode -p $gtmMasterPort -h $gtmMasterServer ${datanodeNames[$i]}
+			# doit ssh $pgxcUser@$gtmMasterServer rm -f $gtmMasterDir/register.node
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} pg_ctl promote -Z datanode -D ${datanodeSlaveDirs[$i]}
+			ssh $pgxcUser@${datanodeSlaveServers[$i]} rm -rf $tmpDir/cmd.out
+			vecho done
+		    # Restart the new master with new gtm_proxy
+			# The following command is a dirty hack to unregister the old master.   This is only one way available now, but
+			# the next version of the core should include an utility to clean it up partially.
+		    # Reconfigure new master's gtm_proxy
+			vecho Reconfiguring new gtm_proxy for ${datanodeSlaveServers[$i]}:${datanodeSlaveDirs[$i]}/postgresql.conf
+			ssh $pgxcUser@${datanodeSlaveServers[$i]} "cat >> ${datanodeSlaveDirs[$i]}/postgresql.conf" <<EOF
+#=================================================
+# Added to promote, $datetime
+gtm_host = '$targetGTMhost'
+gtm_port = $targetGTMport
+# End of addition
+EOF
+			vecho done
+			# doit ssh $pgxcUser@${datanodeSlaveServers[$i]} pg_ctl stop -w -Z datanode -D ${datanodeSlaveDirs[$i]} -o -i -m immediate
+			vecho Restarting ${datanodeNames[$i]} at ${datanodeSlaveServers[$i]}
+			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} pg_ctl restart -w -Z datanode -D ${datanodeSlaveDirs[$i]} -w -o -i > $localTmpDir/cmd.out 2>&1 &
+			sleep 2		# do we need it?
+			doit cat $localTmpDir/cmd.out
+			doit rm -f $localTmpDir/cmd.out
+
+		    # Update other coordinators with this new one ---> first, clean connection for all the users for all the databases
+		    # Get all the available users --> Use this coordinator to get usernam
+			# It may be better to clean connections.  However, we found that clean connection is not stable enough when some node
+			# is gone.   We will wait until it is more stable.
+			# It is not clean but I'd like to leave these code for future improvement.
+			vecho Update coordinators with new datanode configuration.
+		  	# Clean all the pooler connections and update the node configuration
+			vecho Clean all the pooler connections and update the node configuration
+			for ((j=0; j< ${#coordMasterServers[@]}; j++)); do
+				if [ "${coordMasterServers[$j]}" != none ] && [ "${coordMasterServers[$j]}" != N/A ]; then
+					pgxc_monitor -Z node -p ${coordPorts[$j]} -h ${coordMasterServers[$j]} -U $pgxcOwner -d postgres
+					# The following block is needed because a coordinator may leave failed when a server fails and
+					# the datanode may fail-over first.  --> In this case, the coordinator should be given a chance
+					# to reconfigure itself with this datanode.   Coordinator should failover first.
+					if [ $? -ne 0 ]; then
+						echo Coordinator ${coordNames[$j]} is not running.   Skip reconfiguration for this.
+						continue;
+					fi
+					# Issue ALTER NODE.  If target coordinator is not running, we have no way to do this now.   May need to run this afterwords.
+					# Store the script to elsewhere?  --> Now we don't do this.   May be for further work because we expect everything except
+					# for the current coordinator is running healthy.
+					cat >> $localTmpDir/cmd.sql <<EOF
+ALTER NODE ${datanodeNames[$i]} WITH (HOST='${datanodeSlaveServers[$i]}', PORT=${datanodePorts[$i]});
+select pgxc_pool_reload();
+\q
+EOF
+					cat $localTmpDir/cmd.sql
+					psql -p ${coordPorts[$j]} -h ${coordMasterServers[$j]} postgres $pgxcOwner -f $localTmpDir/cmd.sql
+					rm -f $localTmpDir/cmd.sql
+				fi
+			done
+            # Update the configuration variable
+			datanodeMasterServers[$i]="${datanodeSlaveServers[$i]}"
+			datanodeMasterDirs[$i]="${datanodeSlaveDirs[$i]}"
+			datanodeSlaveServers[$i]="none"
+			datanodeSlaveDirs[$i]="none"
+		    # Then update the configuration file with this new configuration
+			cat >> $configFile <<EOF
+#=====================================================
+# Updated due to the coordinator failover, $1, $datetime
+datanodeMasterServers=( ${datanodeMasterServers[@]} )
+datanodeMasterDirs=( ${datanodeMasterDirs[@]} )
+datanodeSlaveServers=( ${datanodeSlaveServers[@]} )
+datanodeSlaveDirs=( ${datanodeSlaveDirs[@]} )
+# End of the update
+EOF
+			return;
+		fi
+	done
+	echo ERROR: specified coordinator $1 not configured.
+	return 2
+}
+
+function pgxc_failover_datanode_old		# Not tested yet. Test should be done after CREATE NODE/ALTER NODE is tested.
 {
 	# First argument is the datanode name
     vecho ================================================================
@@ -3436,6 +3622,18 @@ function pgxc_configure_nodes_all
 	done
 }
 
+
+function start_all
+{
+	pgxc_start_gtm_master
+	pgxc_start_gtm_slave
+	pgxc_start_gtm_proxy_all
+	pgxc_start_datanode_master_all
+	pgxc_start_datanode_slave_all
+	pgxc_start_coordinator_master_all
+	pgxc_start_coordinator_slave_all
+}
+
 function init_all
 {
 	pgxc_init_gtm_master
@@ -3450,17 +3648,8 @@ function init_all
 	pgxc_stop_gtm_proxy_all
 	pgxc_stop_gtm_slave
 	pgxc_stop_gtm_master
-}
-
-function start_all
-{
-	pgxc_start_gtm_master
-	pgxc_start_gtm_slave
-	pgxc_start_gtm_proxy_all
-	pgxc_start_datanode_master_all
-	pgxc_start_datanode_slave_all
-	pgxc_start_coordinator_master_all
-	pgxc_start_coordinator_slave_all
+	start_all
+	pgxc_configure_nodes_all
 }
 
 function stop_all

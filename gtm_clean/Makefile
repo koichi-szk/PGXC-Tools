@@ -1,6 +1,6 @@
 #-------------------------------------------------------------------------
 #
-# Makefile for contrib/pgxc_clean
+# Makefile for contrib/gtm_clean
 #
 # Portions Copyright (c) 2011-2012 Postgres-XC Development Group
 #
@@ -8,7 +8,7 @@
 #
 #-------------------------------------------------------------------------
 
-PGFILEDESC = "pgxc_clean_gtm - unregister node from GTM on the fly"
+PGFILEDESC = "gtm_clean - housekeeping GTM status"
 PGAPPICON = win32
 
 PROGRAM= gtm_clean
@@ -28,7 +28,7 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-subdir = contrib/pgxc_clean_gtm
+subdir = contrib/gtm_clean
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk

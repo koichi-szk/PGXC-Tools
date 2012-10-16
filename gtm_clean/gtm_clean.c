@@ -23,9 +23,7 @@ char *myname = NULL;
 GTM_PGXCNodeType nodetype = 0;	/* Invalid */
 int verbose = 0;
 
-GTM_Conn *conn;
-
-static int process_unregister_command(GTM_Conn *conn, GTM_PGXCNodeType type, char *nodename);
+static int process_unregister_command(GTM_PGXCNodeType type, char *nodename);
 
 int main(int argc, char *argv[])
 {
@@ -132,7 +130,7 @@ int main(int argc, char *argv[])
 				fprintf(stderr, "%s: unregister: -Z option not specified.\n", progname);
 				exit(2);
 			}
-			rc = process_unregister_command(conn, nodetype, nodename);
+			rc = process_unregister_command(nodetype, nodename);
 			break;
 		default:
 			fprintf(stderr, "%s: Internal error, invalid command.\n", progname);
@@ -144,6 +142,7 @@ int main(int argc, char *argv[])
 static GTM_Conn *connectGTM()
 {
 	char connect_str[256];
+	GTM_Conn *conn;
 
 	sprintf(connect_str, "host=%s port=%d node_name=%s remote_type=%d postmaster=0",
 			gtmhost, gtmport, myname == NULL ? DefaultName : myname, GTM_NODE_COORDINATOR);
@@ -155,11 +154,13 @@ static GTM_Conn *connectGTM()
 	return(conn);
 }
 
-static int process_unregister_command(GTM_Conn *conn, GTM_PGXCNodeType type, char *nodename)
+static int process_unregister_command(GTM_PGXCNodeType type, char *nodename)
 {
+	GTM_Conn *conn;
 	int res;
-
-	if (connectGTM() == NULL)
+	
+	conn = connectGTM();
+	if (conn == NULL)
 	{
 		fprintf(stderr, "%s: failed to connect to GTM\n", progname);
 		return 1;
@@ -168,11 +169,13 @@ static int process_unregister_command(GTM_Conn *conn, GTM_PGXCNodeType type, cha
 	if (res == GTM_RESULT_OK){
 		if (verbose)
 			fprintf(stderr, "%s: unregister %s from GTM.\n", progname, nodename);
+		GTMPQfinish(conn);
 		return GTM_RESULT_OK;
 	}
 	else
 	{
 		fprintf(stderr, "%s: Failed to unregister %s from GTM.\n", progname, nodename);
+		GTMPQfinish(conn);
 		return res;
 	}
 }
