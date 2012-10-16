@@ -57,8 +57,12 @@ pgxcInstallDir=$HOME/pgxc
 tmpDir=/tmp					# temporary dir used in XC servers
 localTmpDir=$tmpDir			# temporary dir used here locally
 
-logDir=$HOME/pgxc/pgxc_ctl_log
+logOpt=y						# If you want log
+logDir=$HOME/pgxc/pgxc_ctl_log	# Directory to write pgxc_ctl logs
 
+configBackup=y					# If you want config file backup
+configBackupHost=pgxc-linker	# host to backup config file
+configBackupFile=$configFile	# Backup file name
 
 #---- GTM --------------------------------------------------------------------------------------------------------------
 
@@ -243,17 +247,266 @@ xc_prompt='PGXC$ '
 interactive=n
 verbose=n
 progname=$0
+
+# Create config file template
+#
+# If you change the structure of configuration file section, you must reflect the change in the part below.
+#
+function create_config_file_template
+{
+	cat > $configFile <<EOF
+#!/bin/bash
+configFile=$configFile
+#
+#==========================================================================================================================
+#
+# Configuration Section
+#
+#		This section should be in the file $configFile for
+#		user's configuration.
+#
+# Several assumptons:
+# 1) configuration file will be set to data directory.
+#    configuration file name is fixed to postgresql.conf
+# 2) pg_hba.conf will be set to data directory.  File name is
+#    fixed to pg_hba.conf
+#
+#================================================================
+# MEMO
+#
+# max_connections, min_pool_size, max_pool_size --> should be configurable!
+# They're not cluster specific.  So we may give a chance to include
+# these specific options to be included from external files.
+# They should not change by failover so they just have to be
+# configured at first time only.
+#===============================================================
+#
+#---- OVERALL -----------------------------------------------------------------------------------------------------------
+#
+pgxcOwner=koichi		# owner of the Postgres-XC database cluster.  Here, we use this
+						# both as linus user and database user.  This must be
+						# the super user of each coordinator and datanode.
+pgxcUser=$pgxcOwner		# OS user of Postgres-XC owner
+
+pgxcInstallDir=$HOME/pgxc
+
+tmpDir=/tmp					# temporary dir used in XC servers
+localTmpDir=$tmpDir			# temporary dir used here locally
+
+logOpt=y						# If you want log
+logDir=$HOME/pgxc/pgxc_ctl_log	# Directory to write pgxc_ctl logs
+
+configBackup=y					# If you want config file backup
+configBackupHost=pgxc-linker	# host to backup config file
+configBackupFile=$configFile	# Backup file name
+
+#---- GTM --------------------------------------------------------------------------------------------------------------
+
+# GTM is mandatory.  You must have at least (and only) one GTM master in your Postgres-XC cluster.
+# If GTM crashes and you need to reconfigure it, you can do it by pgxc_update_gtm command to update
+# GTM master with others.   Of course, we provide pgxc_remove_gtm command to remove it.  This command
+# will not stop the current GTM.  It is up to the operator.
+
+#---- Overall -------
+gtmName=gtm
+
+#---- GTM Master -----------------------------------------------
+
+#---- Overall ----
+gtmMasterServer=node13
+gtmMasterPort=20001
+gtmMasterDir=$HOME/pgxc/nodes/gtm
+
+#---- Configuration ---
+gtmExtraConfig=none			# Will be added gtm.conf for both Master and Slave (done at initilization only)
+gtmMasterSpecificExtraConfig=none	# Will be added to Master's gtm.conf (done at initialization only)
+
+#---- GTM Slave -----------------------------------------------
+
+# Because GTM is a key component to maintain database consistency, you may want to configure GTM slave
+# for backup.
+
+#---- Overall ------
+gtmSlave=y					# Specify y if you configure GTM Slave.   Otherwise, GTM slave will not be configured and
+							# all the following variables will be reset.
+gtmSlaveServer=node12		# value none means GTM slave is not available.  Give none if you don't configure GTM Slave.
+gtmSlavePort=20001			# Not used if you don't configure GTM slave.
+gtmSlaveDir=$HOME/pgxc/nodes/gtm	# Not used if you don't configure GTM slave.
+# Please note that when you have GTM failover, then there will be no slave available until you configure the slave
+# again. (pgxc_add_gtm_slave function will handle it)
+
+#---- Configuration ----
+gtmSlaveSpecificExtraConfig=none # Will be added to Slave's gtm.conf (done at initialization only)
+
+#---- GTM Proxy -------------------------------------------------------------------------------------------------------
+# GTM proxy will be selected based upon which server each component runs on.
+# When fails over to the slave, the slave inherits its master's gtm proxy.  It should be
+# reconfigured based upon the new location.
+#
+# To do so, slave should be restarted.   So pg_ctl promote -> (edit postgresql.conf and recovery.conf) -> pg_ctl restart
+#
+# You don't have to configure GTM Proxy if you dont' configure GTM slave or you are happy if every component connects
+# to GTM Master directly.  If you configure GTL slave, you must configure GTM proxy too.
+
+#---- Shortcuts ------
+gtmProxyDir=$HOME/pgxc/nodes/gtm_pxy
+
+#---- Overall -------
+gtmProxy=y				# Specify y if you conifugre at least one GTM proxy.   You may not configure gtm proxies
+						# only when you dont' configure GTM slaves.
+						# If you specify this value not to y, the following parameters will be set to default empty values.
+						# If we find there're no valid Proxy server names (means, every servers are specified
+						# as none), then gtmProxy value will be set to "n" and all the entries will be set to
+						# empty values.
+gtmProxyNames=(gtm_pxy1 gtm_pxy2 gtm_pxy3 gtm_pxy4)	# No used if it is not configured
+gtmProxyServers=(node06 node07 node08 node09)			# Specify none if you dont' configure it.
+gtmProxyPorts=(20001 20001 20001 20001)				# Not used if it is not configured.
+gtmProxyDirs=($gtmProxyDir $gtmProxyDir $gtmProxyDir $gtmProxyDir)	# Not used if it is not configured.
+
+#---- Configuration ----
+gtmPxyExtraConfig=none		# Extra configuration parameter for gtm_proxy
+gtmPxySpecificExtraConfig=(none none none none)
+
+#---- Coordinators ----------------------------------------------------------------------------------------------------
+
+#---- shortcuts ----------
+coordMasterDir=$HOME/pgxc/nodes/coord
+coordSlaveDir=$HOME/pgxc/nodes/coord_slave
+coordArchLogDir=$HOME/pgxc/nodes/coord_archlog
+
+#---- Overall ------------
+coordNames=(coord1 coord2 coord3 coord4)		# Master and slave use the same name
+coordPorts=(20004 20005 20004 20005)			# Master and slave use the same port
+poolerPorts=(20010 20011 20010 20011)			# Master and slave use the same pooler port
+coordPgHbaEntries=(192.168.1.0/24)				# Assumes that all the coordinator (master/slave) accepts
+												# the same connection
+												# This entry allows only $pgxcOwner to connect.
+												# If you'd like to setup another connection, you should
+												# supply these entries through files specified below.
+# Note: The above parameter is extracted as "host all all 0.0.0.0/0 trust".   If you don't want
+# such setups, specify the value () to this variable and suplly what you want using coordExtraPgHba
+# and/or coordSpecificExtraPgHba variables.
+
+#---- Master -------------
+coordMasterServers=(node06 node07 node08 node09)		# none means this master is not available
+coordMasterDirs=($coordMasterDir $coordMasterDir $coordMasterDir $coordMasterDir)
+coordMaxWALsernder=5	# max_wal_senders: needed to configure slave. If zero value is specified,
+						# it is expected to supply this parameter explicitly by external files
+						# specified in the following.	If you don't configure slaves, leave this value to zero.
+coordMaxWALSenders=($coordMaxWALsernder $coordMaxWALsernder $coordMaxWALsernder $coordMaxWALsernder)
+						# max_wal_senders configuration for each coordinator.
+
+#---- Slave -------------
+coordSlave=y			# Specify y if you configure at least one coordiantor slave.  Otherwise, the following
+						# configuration parameters will be set to empty values.
+						# If no effective server names are found (that is, every servers are specified as none),
+						# then coordSlave value will be set to n and all the following values will be set to
+						# empty values.
+coordSlaveServers=(node07 node08 node09 node06)			# none means this slave is not available
+coordSlaveDirs=($coordSlaveDir $coordSlaveDir $coordSlaveDir $coordSlaveDir)
+coordArchLogDirs=($coordArchLogDir $coordArchLogDir $coordArchLogDir $coordArchLogDir)
+
+#---- Configuration files---
+# Need these when you'd like setup specific non-default configuration 
+# These files will go to corresponding files for the master.
+# You may supply your bash script to setup extra config lines and extra pg_hba.conf entries 
+# Or you may supply these files manually.
+coordExtraConfig=none	# Extra configuration file for coordinators.  This file will be added to all the coordinators'
+						# postgresql.conf
+coordSpecificExraConfig=(none none none none)
+coordExtraPgHba=none	# Extra entry for pg_hba.conf.  This file will be added to all the coordinators' pg_hba.conf
+coordSpecificExtraPgHba=(none none none none)
+
+#---- Datanodes -------------------------------------------------------------------------------------------------------
+
+#---- Shortcuts --------------
+datanodeMasterDir=$HOME/pgxc/nodes/dn_master
+datanodeSlaveDir=$HOME/pgxc/nodes/dn_slave
+datanodeArchLogDir=$HOME/pgxc/nodes/datanode_archlog
+
+#---- Overall ---------------
+#primaryDatanode=datanode1				# Primary Node.
+# At present, xc has a priblem to issue ALTER NODE against the primay node.  Until it is fixed, the test will be done
+# without this feature.
+primaryDatanode=N/A						# Primary Node.
+datanodeNames=(datanode1 datanode2 datanode3 datanode4)
+datanodePorts=(20008 20009 20008 20009)	# Master and slave use the same port!
+datanodePgHbaEntries=(192.168.1.0/24)	# Assumes that all the coordinator (master/slave) accepts
+										# the same connection
+										# This list sets up pg_hba.conf for $pgxcOwner user.
+										# If you'd like to setup other entries, supply them
+										# through extra configuration files specified below.
+# Note: The above parameter is extracted as "host all all 0.0.0.0/0 trust".   If you don't want
+# such setups, specify the value () to this variable and suplly what you want using datanodeExtraPgHba
+# and/or datanodeSpecificExtraPgHba variables.
+
+#---- Master ----------------
+datanodeMasterServers=(node06 node07 node08 node09)	# none means this master is not available.
+													# This means that there should be the master but is down.
+													# The cluster is not operational until the master is
+													# recovered and ready to run.	
+datanodeMasterDirs=($datanodeMasterDir $datanodeMasterDir $datanodeMasterDir $datanodeMasterDir)
+datanodeMaxWalSender=5								# max_wal_senders: needed to configure slave. If zero value is 
+													# specified, it is expected this parameter is explicitly supplied
+													# by external configuration files.
+													# If you don't configure slaves, leave this value zero.
+datanodeMaxWalSenders=($datanodeMaxWalSender $datanodeMaxWalSender $datanodeMaxWalSender $datanodeMaxWalSender)
+						# max_wal_senders configuration for each datanode
+
+#---- Slave -----------------
+datanodeSlave=y			# Specify y if you configure at least one coordiantor slave.  Otherwise, the following
+						# configuration parameters will be set to empty values.
+						# If no effective server names are found (that is, every servers are specified as none),
+						# then datanodeSlave value will be set to n and all the following values will be set to
+						# empty values.
+datanodeSlaveServers=(node07 node08 node09 node06)	# value none means this slave is not available
+datanodeSlaveDirs=($datanodeSlaveDir $datanodeSlaveDir $datanodeSlaveDir $datanodeSlaveDir)
+datanodeArchLogDirs=( $datanodeArchLogDir $datanodeArchLogDir $datanodeArchLogDir $datanodeArchLogDir )
+
+# ---- Configuration files ---
+# You may supply your bash script to setup extra config lines and extra pg_hba.conf entries here.
+# These files will go to corresponding files for the master.
+# Or you may supply these files manually.
+datanodeExtraConfig=none	# Extra configuration file for datanodes.  This file will be added to all the 
+							# datanodes' postgresql.conf
+datanodeSpecificExtraConfig=(none none none none)
+datanodeExtraPgHba=none		# Extra entry for pg_hba.conf.  This file will be added to all the datanodes' postgresql.conf
+datanodeSpecificExtraPgHba=(none none none none)
+
+#
+#		End of Configuration Section
+#
+#==========================================================================================================================
+EOF
+
+	chmod +x $configFile
+}
 #============================================================
 #
 # Common functions
 #
 #============================================================
 
+logfile=none;
+function log_echo
+{
+	if [ $logOpt == "y" ]; then
+		echo `date +%y%m%d_%H%M_%S` $* >> logfile
+	fi
+}
+
+function set_log_file
+{
+	mkdir -p $logDir
+	logfile=$logDir/pgxc_ctl_$datetime.log
+}
+
 function vecho
 {
 	if [ "$verbose" == y ]; then
 		echo $*
 	fi
+	log_echo $*
 }
 
 function iecho
@@ -261,6 +514,12 @@ function iecho
 	if [ "$interactive" == y ]; then
 		echo $*
 	fi
+}
+
+function eecho
+{
+	echo $*
+	log_echo $*
 }
 
 function doit
@@ -334,7 +593,7 @@ function set_verbose
 		off )
 			verbose=n;;
 		* )
-			iecho Specify y/n/on/off
+			echo Specify y/n/on/off
 			return 1;;
 	esac
 	iecho Verbose set to $verbose
@@ -357,7 +616,7 @@ function set_interactive
 		off )
 			interactive=n;;
 		* )
-			iecho Specify y/n/on/off
+			echo Specify y/n/on/off
 			return 1;;
 	esac
 	iecho Interactive set to $interactive
@@ -1002,10 +1261,205 @@ function print_config
 	echo "=== End of configuration ==="
 }
 
+# $1: nodename, $2: master/slave/all/-/none
+function pgxc_ctl_monitor
+{
+	local fn=monitor
+	local i
+	if [ $# -le 0 ]; then
+		eecho "$progname:$fn" specify node name
+		return 2
+	fi
+	if [ "$1" == "none"  ] || [ "$1" == "N/A" ]; then
+		eecho "$progname:$fn" invalid node name
+		return 2
+	fi
+	if [ "$1" == "$gtmName" ]; then
+		if [ "$2" == "master" ]; then
+			pgxc_monitor -Z gtm -p $gtmMasterPort -h $gtmMasterServer
+			if [ $? -eq 0 ]; then
+				echo GTM master "("$gtmName")" running
+			else
+				echo GTM master "("$gtmName")" not running
+			fi
+			return
+		elif [ "$2" == "slave" ]; then
+			if [ "$gtmSlaveServer" == "none" ] || [ "$gtmSlaveServer" == "N/A" ]; then
+				echo GTM slave not configured.
+				return
+			fi
+			pgxc_monitor -Z gtm -p $gtmSlavePort -h $gtmSlaveServer
+			if [ $? -eq 0 ]; then
+				echo GTM slave "("$gtmName")" running
+			else
+				echo GTM slave "("$gtmName")" not running
+			fi
+			return
+		elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+			pgxc_monitor -Z gtm -p $gtmMasterPort -h $gtmMasterServer
+			if [ $? -eq 0 ]; then
+				echo GTM master "("$gtmName")" running
+			else
+				echo GTM master "("$gtmName")" not running
+			fi
+			if [ "$gtmSlaveServer" == "none" ] || [ "$gtmSlaveServer" == "N/A" ]; then
+				echo GTM slave not configured.
+				return
+			fi
+			pgxc_monitor -Z gtm -p $gtmSlavePort -h $gtmSlaveServer
+			if [ $? -eq 0 ]; then
+				echo GTM slave "("$gtmName")" running
+			else
+				echo GTM slave "("$gtmName")" not running
+			fi
+		fi
+		return
+	fi
+	# GTM-Proxy
+	for ((i=0; i<${#gtmProxyNames[@]}; i++)); do
+		if [ "$1" == "${gtmProxyNames[$i]}" ]; then
+			pgxc_monitor -Z gtm -p ${gtmProxyPorts[$i]} -h ${gtmProxyServers[$i]}
+			if [ $? -eq 0 ]; then
+				echo GTM proxy "("${gtmProxyNames[$i]}")": running. "   "
+			else
+				echo GTM proxy "("${gtmProxyNames[$i]}")": not running. "   "
+			fi
+			return
+		fi
+	done
+	# Coordinator
+	for ((i=0; i<${#coordNames[@]}; i++)); do
+		if [ "$1" == "${coordNames[$i]}" ]; then
+			if [ "$2" == "master" ]; then
+				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Coordinator master "("${coordNames[$i]}")": running
+				else
+					echo Coordinator master "("${coordNames[$i]}")": not running
+				fi
+				return
+			fi
+			if [ "$2" == "slave" ]; then
+				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Coordinator slave "("${coordNames[$i]}")": running
+				else
+					echo Coordinator slave "("${coordNames[$i]}")": not running
+				fi
+				return
+			fi
+			if [ "$2" == "all" ] || [ "$2" == "" ]; then
+				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Coordinator master "("${coordNames[$i]}")": running
+				else
+					echo Coordinator master "("${coordNames[$i]}")": not running
+				fi
+				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Coordinator slave "("${coordNames[$i]}")": running
+				else
+					echo Coordinator slave "("${coordNames[$i]}")": not running
+				fi
+				return
+			fi
+		fi
+	done
+	# Datanode
+	for ((i=0; i<${#datanodeNames[@]}; i++)); do
+		if [ "$1" == "${datanodeNames[$i]}" ]; then
+			if [ "$2" == "master" ]; then
+				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Datanode master "("${datanodeNames[$i]}")": running
+				else
+					echo Datanode master "("${datanodeNames[$i]}")": not running
+				fi
+				return
+			fi
+			if [ "$2" == "slave" ]; then
+				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Datanode slave "("${datanodeNames[$i]}")": running
+				else
+					echo Datanode slave "("${datanodeNames[$i]}")": not running
+				fi
+				return
+			fi
+			if [ "$2" == "all" ] || [ "$2" == "" ]; then
+				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Datanode master "("${datanodeNames[$i]}")": running
+				else
+					echo Datanode master "("${datanodeNames[$i]}")": not running
+				fi
+				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} -U $pgxcOwner -d postgres
+				if [ $? == 0 ]; then
+					echo Datanode slave "("${coordNames[$i]}")": running
+				else
+					echo Datanode slave "("${coordNames[$i]}")": not running
+				fi
+				return
+			fi
+		fi
+	done
+
+}
 #==============================================================
 # Check each component status (running or not)
 # You must install/deploy pgxc_monitor
 #==============================================================
+
+function pgxc_ctl_show_component
+{
+	local i
+	# GTM
+	if [ "$1" == "$gtmName" ]; then
+		echo "$1:" GTM
+		echo "     " GTM Master, "port=$gtmMasterPort", "host=$gtmMasterServer", "dir=$gtmMasterDir"
+		if [ "$gtmSlaveServer" == "none" ] || [ "$gtmSlaveServer" == "N/A" ]; then
+			echo "     " GTM Slave, not configured
+		else
+			echo "     " GTM Slave, "port=$gtmSlavePort", "host=$gtmSlaveServer", "dir=$gtmSlaveDir"
+		fi
+		return
+	fi
+	# GTM Proxy
+	for ((i=0; i<${#gtmProxyNames[@]}; i++)); do
+		if [ "${gtmProxyNames[$i]}" == "$1" ]; then
+			echo "$1:"  GTM Proxy, "port=${gtmProxyPorts[$i]}", "host=${gtmProxyServers[$i]}", "dir=${gtmProxyDirs[$i]}"
+			return
+		fi
+	done
+	# Coordinator
+	for ((i=0; i<${#coordNames[@]}; i++)); do
+		if [ "${coordNames[$i]}" == "$1" ]; then
+			echo "$1:" Coordinator
+			echo "     " Coordinator Master, port=${coordPorts[$i]}, host=${coordMasterServers[$i]}, dir=${coordMasterDirs[$i]}
+			if [ "${coordSlaveServers[$i]}" == "none" ] || [ "${coordSlaveServers[$i]}" == "N/A" ]; then
+				echo "     " Coordinator Slave, not configured
+			else
+				echo "     " Coordinator Slave, port=${coordPorts[$i]}, host=${coordSlaveServers[$i]}, dir=${coordSlaveDirs[$i]}
+			fi
+			return
+		fi
+	done
+	# Datanode
+	for ((i=0; i<${#datanodeNames[@]}; i++)); do
+		if [ "${datanodeNames[$i]}" == "$1" ]; then
+			echo "$1:" Datanode
+			echo "     " Datanode Master, port=${datanodePorts[$i]}, host=${datanodeMasterServers[$i]}, dir=${datanodeMasterDirs[$i]}
+			if [ "${datanodeSlaveServers[$i]}" == "none" ] || [ "${datanodeSlaveServers[$i]}" == "N/A" ]; then
+				echo "     " Datanode Slave, not configured
+			else
+				echo "     " Datanode Slave, port=${datanodePorts[$i]}, host=${datanodeSlaveServers[$i]}, dir=${datanodeSlaveDirs[$i]}
+			fi
+			return
+		fi
+	done
+	echo Component $1 not found.
+	return 1
+}
 function monitor_components
 {
 	local i
@@ -2751,6 +3205,23 @@ EOF
 	return 2
 }
 
+# $1: database name
+function pgxc_clean_connection_all
+{
+	local fn=pgxc_clean_connection
+	local i
+	if [ $# -le 0 ]; then
+		eecho $progname:$fn no database name specified
+		return 2
+	fi
+	for ((i=0; i<${#coordNames[@]}; i++)); do
+		if [ "${coordMasterServers[$i]}" == "none" ] || [ "${coordMasterServers[$i]}" == "N/A" ]; then
+			continue;
+		fi
+		psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c "CLEAN CONNECTION TO ALL FOR DATABASE $1"
+	done
+}
+
 #===============================================================================
 #
 # Datanode staff
@@ -3261,13 +3732,65 @@ function pgxc_kill_datanode_slave_all
 	done
 }
 
+
 selected_coord="none"
 selected_coord_port=0
 selected_coord_host="none"
+
+function pgxc_find_coordinator
+{
+	local fn=pgxc_find_coordinator
+	selected_coord="none"
+	selected_coord_port=0
+	selected_coord_host="none"
+	local i
+	log_echo $progname-$fn $*
+	if [ $# -le 0 ]; then
+		eecho $progname-$fn missing coordinator name
+		return 2
+	fi
+	if [ "$1" == "none" ] || [ "$1" == "N/A" ]; then
+		eecho $progname-$fn invalid coordinator name $1
+		return 2
+	fi
+	for ((i=0;i<${#coordNames[@]};i++));do
+		if [ "${coordNames[$i]}" == "$1" ]; then
+			if [ "${coordMasterServers[$i]}" == "none" ] || [ "${coordMasterServers[$i]}" == "N/A" ]; then
+				eecho $progname:$fn specified coordinator $1 does not have master
+				return 2
+			fi
+			selected_coord=${coordNames[$i]}
+			selected_coord_port=${coordPorts[$i]}
+			selected_coord_host=${coordMasterServers[$i]}
+			return;
+		fi
+	done
+	eecho $progname-$fn specified coordinator $1 not found
+	return 1
+}
+
 function pgxc_select_coordinator
 {
+	selected_coord="none"
+	selected_coord_port=0
+	selected_coord_host="none"
 	local i
-	for ((i=0;i<${#coordMasterServers[@]};i++)); do
+	local s
+	s=$(($RANDOM%${#coordMasterServers[@]}))
+	for ((i=$s;i<${#coordMasterServers[@]};i++)); do
+		if [ ${coordMasterServers[$i]} != "none" ] && [ ${coordMasterServers[$i]} != "N/A" ]; then
+			pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
+			if [ $? == 0 ]; then
+				# Need this block not to select failed coordinator.  This may happen if a server fails
+				# and datanode fails over first.
+				selected_coord=${coordNames[$i]}
+				selected_coord_port=${coordPorts[$i]}
+				selected_coord_host=${coordMasterServers[$i]}
+				return 0
+			fi
+		fi
+	done
+	for ((i=0;i<$s;i++)); do
 		if [ ${coordMasterServers[$i]} != "none" ] && [ ${coordMasterServers[$i]} != "N/A" ]; then
 			pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
 			if [ $? == 0 ]; then
@@ -3702,6 +4225,7 @@ function test_failover
 # Handle options
 progname=$0
 moretodo=y
+cmd_with_log=null
 while [ $moretodo == y ]; do
 	if [ $# -gt 0 ]; then
 		case $1 in
@@ -3760,6 +4284,14 @@ while [ $moretodo == y ]; do
 				shift
 				interactive=n
 				continue;;
+			--with-log )
+				shift
+				cmd_with_log=y
+				continue;;
+			--without-log )
+				shift
+				cmd_with_log=n
+				continue;;
 			* )
 				moretodo=n
 				continue;;
@@ -3774,6 +4306,10 @@ done
 if [ -f $configFile ]; then
 	source $configFile
 fi
+# Log option can be overriden by command-line option
+if [ $cmd_with_log != null ]; then
+	cmdOpt=$cmd_with_log
+fi
 
 # Check if slaves are configured and makeup each server to N/A if needed
 handle_no_slaves
@@ -3785,17 +4321,179 @@ makeServerList
 # interactive=y --> should be set by options
 while [ 1 ]; do
 	echo -n "$xc_prompt"
-	read cmdname cmdparam
+	read cmdname p1 p2 p3 p4 cmdparam
 
 	if [ "$cmdname" == "" ];  then
 		continue
 	fi
-	if [ "$cmdname" == "end"  -o "$cmdname" == "q" ]; then
+	if [ "$cmdname" == "Psql" ]; then
+		if [ "$p1" == "" ]; then
+			pgxc_select_coordinator
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+		elif [ "$p1" == '-' ]; then
+			pgxc_select_coordinator
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+		else
+			pgxc_find_coordinator $p1
+			if [ "$selected_coord" == "none" ]; then
+				continue;
+			fi
+		fi
+		psql -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
+		continue
+	fi
+	if [ "$cmdname" == "Createdb" ]; then
+		if [ "$p1" == "" ]; then
+			eecho Specify coordinator name or -
+			continue
+		fi
+		if [ "$p1" == "-" ]; then
+			pgxc_select_coordinator
+		else
+			pgxc_find_coordinator $p1
+		fi
+		if [ "$selected_coord" == "none" ]; then
+			eecho No available coordinator found
+			continue;
+		fi
+		createdb -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
+		continue
+	fi
+	if [ "$cmdname" == "Dropdb" ]; then
+		if [ "$p1" == "" ]; then
+			eecho Specify coordinator name or -
+			continue
+		fi
+		if [ "$p1" == "-" ]; then
+			pgxc_select_coordinator
+		else
+			pgxc_find_coordinator $p1
+		fi
+		if [ "$selected_coord" == "none" ]; then
+			eecho No available coordinator found
+			continue;
+		fi
+		pgxc_clean_connection_all $p2
+		dropdb -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
+		continue
+	fi
+	if [ "$cmdname" == "Createuser" ]; then
+		if [ "$p1" == "" ]; then
+			eecho Specify coordinator name or -
+			continue
+		fi
+		if [ "$p1" == "-" ]; then
+			pgxc_select_coordinator
+		else
+			pgxc_find_coordinator $p1
+		fi
+		if [ "$selected_coord" == "none" ]; then
+			eecho No available coordinator found
+			continue;
+		fi
+		createuser -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
+		continue
+	fi
+	if [ "$cmdname" == "Dropuser" ]; then
+		if [ "$p1" == "" ]; then
+			eecho Specify coordinator name or -
+			continue
+		fi
+		if [ "$p1" == "-" ]; then
+			pgxc_select_coordinator
+		else
+			pgxc_find_coordinator $p1
+		fi
+		if [ "$selected_coord" == "none" ]; then
+			eecho No available coordinator found
+			continue;
+		fi
+		dropuser -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
+		continue
+	fi
+	if [ "$cmdname" == "Vacuumdb" ]; then
+		if [ "$p1" == "" ]; then
+			eecho Specify coordinator name or -
+			continue
+		fi
+		if [ "$p1" == "-" ]; then
+			pgxc_select_coordinator
+		else
+			pgxc_find_coordinator $p1
+		fi
+		if [ "$selected_coord" == "none" ]; then
+			eecho No available coordinator found
+			continue;
+		fi
+		vacuumdb -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
+		continue
+	fi
+	if [ "$cmdname" == "prepare" ]; then
+		if [ "$p1" == "config" ]; then
+			create_config_file_template
+		else
+			eecho Type prepare config
+		fi
+		continue
+	fi
+	if [ "$cmdname" == "monitor" ]; then
+		if [ "$p1" == "components" ]; then
+			monitor_components
+		else
+			pgxc_ctl_monitor $p1 $p2 $p3 $p4 $cmdparam
+		fi
+		continue
+	fi
+	if [ "$cmdname" == "xcshow" ]; then
+		if [ "$p1" == "" ]; then
+			echo Specify item to show
+		elif [ "$p1" == "config" ]; then
+			print_config
+		elif [ "$p1" == "verbose" ]; then
+			echo verbose=$verbose
+		elif [ "$p1" == "interactive" ]; then
+			echo interactive=$interactive
+		elif [ "$p1" == "log" ]; then
+			echo -n log option = $logOpt
+			if [ "$logOpt" == "y" ]; then
+				echo , logDir: $logDir
+			else
+				echo ""
+			fi
+		elif [ "$p1" == "backup" ]; then
+			echo -n config backup = $configBackup
+			if [ "$configBackup" == "y" ]; then
+				echo "backup host:" $configBackupHost, "backup file:" $configBackupFile
+			else
+				echo ""
+			fi
+		else
+			pgxc_ctl_show_component $p1 $p2 $p3 $p4 $cmdparam
+		fi
+		continue
+	fi
+	if [ "$cmdname" == "xcset" ]; then
+		if [ "$p1" == "verbose" ]; then
+			set_verbose $p2
+		elif [ "$p1" == "interactive" ]; then
+			set_interactive $p2
+		else
+			echo "Invalid xcset option $p1"
+		fi
+		continue
+	fi
+	if [ "$cmdname" == "end" ] || [ "$cmdname" == "q" ]; then
 		break
 	fi
 	# Need the following trick to handle variable value assignment and echo.
 	cat > $localTmpDir/wk.cmd <<EOF
-$cmdname $cmdparam
+$cmdname $p1 $p2 $p3 $p4 $cmdparam
 EOF
 	source $localTmpDir/wk.cmd
 	rm $localTmpDir/wk.cmd
