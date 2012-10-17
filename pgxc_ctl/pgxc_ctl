@@ -4676,6 +4676,25 @@ function test_failover
 	pgxc_failover_coordinator coord1
 }
 
+##############################################################################
+#
+# Help commands
+#
+##############################################################################
+
+function help_command
+{
+	echo Command you can type:
+	echo "  "  - clean Createdb Createuser deploy Dropdb Dropuser end failover 
+	echo "  "  - init kill monitor prepare Psql q start stop Vacuumdb xcset xcshow
+	echo For details, type cmdname ?
+	
+	echo
+	echo If you are familiar with internal functions, you can type "function" name and its argument directory.
+	echo pgxc_ctl will also accept commands for bash
+
+}
+
 ###############################################################################
 #
 #   EXECUTING SECTION
@@ -4809,6 +4828,10 @@ while [ 1 ]; do
 	fi
 	if [ "$cmdname" == "end" ] || [ "$cmdname" == "q" ]; then
 		break
+	fi
+	if [ "$cmdname" == "?" ]; then
+		help_command
+		continue
 	fi
 
 	# Init --- Now accepts only all or default to initialize everything here.
@@ -5010,7 +5033,7 @@ while [ 1 ]; do
 		continue
 	fi
 	if [ "$cmdname" == "monitor" ]; then
-		if [ "$p1" == "components" ]; then
+		if [ "$p1" == "all" ]; then
 			monitor_components
 		else
 			pgxc_ctl_monitor $p1 $p2 $p3 $p4 $cmdparam
