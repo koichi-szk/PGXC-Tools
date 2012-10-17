@@ -1318,11 +1318,15 @@ function pgxc_ctl_monitor
 	# GTM-Proxy
 	for ((i=0; i<${#gtmProxyNames[@]}; i++)); do
 		if [ "$1" == "${gtmProxyNames[$i]}" ]; then
+			if [ "${gtmProxyServers[$i]}" == "none" ] || [ "${gtmProxyServers[$i]}" == "N/A" ]; then
+				echo GTM proxy "("${gtmProxyNames[$i]}")": not configured
+				return;
+			fi
 			pgxc_monitor -Z gtm -p ${gtmProxyPorts[$i]} -h ${gtmProxyServers[$i]}
 			if [ $? -eq 0 ]; then
-				echo GTM proxy "("${gtmProxyNames[$i]}")": running. "   "
+				echo GTM proxy "("${gtmProxyNames[$i]}")": running
 			else
-				echo GTM proxy "("${gtmProxyNames[$i]}")": not running. "   "
+				echo GTM proxy "("${gtmProxyNames[$i]}")": not running
 			fi
 			return
 		fi
@@ -1331,6 +1335,10 @@ function pgxc_ctl_monitor
 	for ((i=0; i<${#coordNames[@]}; i++)); do
 		if [ "$1" == "${coordNames[$i]}" ]; then
 			if [ "$2" == "master" ]; then
+				if [ "${coordMasterServers[$i]}" == "none" ] || [ "${coordMasterServers[$i]}" == "N/A" ]; then
+					echo Coordinator master "("${coordNames[$i]}")": not configured
+					return
+				fi
 				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
 				if [ $? == 0 ]; then
 					echo Coordinator master "("${coordNames[$i]}")": running
@@ -1340,6 +1348,10 @@ function pgxc_ctl_monitor
 				return
 			fi
 			if [ "$2" == "slave" ]; then
+				if [ "${coordSlaveServers[$i]}" == "none" ] || [ "${coordSlaveServers[$i]}" == "N/A" ]; then
+					echo Coordinator slave "("${coordNames[$i]}")": not configured
+					return
+				fi
 				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} -U $pgxcOwner -d postgres
 				if [ $? == 0 ]; then
 					echo Coordinator slave "("${coordNames[$i]}")": running
@@ -1349,17 +1361,25 @@ function pgxc_ctl_monitor
 				return
 			fi
 			if [ "$2" == "all" ] || [ "$2" == "" ]; then
-				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
-				if [ $? == 0 ]; then
-					echo Coordinator master "("${coordNames[$i]}")": running
+				if [ "${coordMasterServers[$i]}" == "none" ] || [ "${coordMasterServers[$i]}" == "N/A" ]; then
+					echo Coordinator master "("${coordNames[$i]}")": not configured
 				else
-					echo Coordinator master "("${coordNames[$i]}")": not running
+					pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
+					if [ $? == 0 ]; then
+						echo Coordinator master "("${coordNames[$i]}")": running
+					else
+						echo Coordinator master "("${coordNames[$i]}")": not running
+					fi
 				fi
-				pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} -U $pgxcOwner -d postgres
-				if [ $? == 0 ]; then
-					echo Coordinator slave "("${coordNames[$i]}")": running
+				if [ "${coordSlaveServers[$i]}" == "none" ] || [ "${coordSlaveServers[$i]}" == "N/A" ]; then
+					echo Coordinator slave "("${coordNames[$i]}")": not configured
 				else
-					echo Coordinator slave "("${coordNames[$i]}")": not running
+					pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} -U $pgxcOwner -d postgres
+					if [ $? == 0 ]; then
+						echo Coordinator slave "("${coordNames[$i]}")": running
+					else
+						echo Coordinator slave "("${coordNames[$i]}")": not running
+					fi
 				fi
 				return
 			fi
@@ -1369,6 +1389,10 @@ function pgxc_ctl_monitor
 	for ((i=0; i<${#datanodeNames[@]}; i++)); do
 		if [ "$1" == "${datanodeNames[$i]}" ]; then
 			if [ "$2" == "master" ]; then
+				if [ "${datanodeMasterServers[$i]}" == "none" ] || [ "${datanodeMasterServers[$i]}" == "N/A" ]; then
+					echo Datanode master "("${datanodeNames[$i]}")": not configured
+					return
+				fi
 				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} -U $pgxcOwner -d postgres
 				if [ $? == 0 ]; then
 					echo Datanode master "("${datanodeNames[$i]}")": running
@@ -1378,6 +1402,10 @@ function pgxc_ctl_monitor
 				return
 			fi
 			if [ "$2" == "slave" ]; then
+				if [ "${datanodeSlaveServers[$i]}" == "none" ] || [ "${datanodeSlaveServers[$i]}" == "N/A" ]; then
+					echo Datanode slave "("${datanodeNames[$i]}")": not configured
+					return
+				fi
 				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} -U $pgxcOwner -d postgres
 				if [ $? == 0 ]; then
 					echo Datanode slave "("${datanodeNames[$i]}")": running
@@ -1387,17 +1415,25 @@ function pgxc_ctl_monitor
 				return
 			fi
 			if [ "$2" == "all" ] || [ "$2" == "" ]; then
-				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} -U $pgxcOwner -d postgres
-				if [ $? == 0 ]; then
-					echo Datanode master "("${datanodeNames[$i]}")": running
+				if [ "${datanodeMasterServers[$i]}" == "none" ] || [ "${datanodeMasterServers[$i]}" == "N/A" ]; then
+					echo Datanode master "("${datanodeNames[$i]}")": not configured
 				else
-					echo Datanode master "("${datanodeNames[$i]}")": not running
+					pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} -U $pgxcOwner -d postgres
+					if [ $? == 0 ]; then
+						echo Datanode master "("${datanodeNames[$i]}")": running
+					else
+						echo Datanode master "("${datanodeNames[$i]}")": not running
+					fi
 				fi
-				pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} -U $pgxcOwner -d postgres
-				if [ $? == 0 ]; then
-					echo Datanode slave "("${coordNames[$i]}")": running
+				if [ "${datanodeSlaveServers[$i]}" == "none" ] || [ "${datanodeSlaveServers[$i]}" == "N/A" ]; then
+					echo Datanode slave "("${datanodeNames[$i]}")": not configured
 				else
-					echo Datanode slave "("${coordNames[$i]}")": not running
+					pgxc_monitor -Z node -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} -U $pgxcOwner -d postgres
+					if [ $? == 0 ]; then
+						echo Datanode slave "("${coordNames[$i]}")": running
+					else
+						echo Datanode slave "("${coordNames[$i]}")": not running
+					fi
 				fi
 				return
 			fi
@@ -1460,6 +1496,37 @@ function pgxc_ctl_show_component
 	echo Component $1 not found.
 	return 1
 }
+
+function pgxc_ctl_show_gtm_proxy_all
+{
+	local i
+	echo ----------
+	echo GTM Proxies:
+	for ((i=0; i<${#gtmProxyNames[@]}; i++)); do
+		pgxc_ctl_show_component ${gtmProxyNames[$i]}
+	done
+}
+
+function pgxc_ctl_show_coordinator_all
+{
+	local i
+	echo ----------
+	echo Coordinators:
+	for ((i=0; i<${#coordNames[@]}; i++)); do
+		pgxc_ctl_show_component ${coordNames[$i]}
+	done
+}
+
+function pgxc_ctl_show_datanode_all
+{
+	local i
+	echo ----------
+	echo Datanodes:
+	for ((i=0; i<${#datanodeNames[@]}; i++)); do
+		pgxc_ctl_show_component ${datanodeNames[$i]}
+	done
+}
+
 function monitor_components
 {
 	local i
@@ -1696,6 +1763,11 @@ function pgxc_clean_dir
 	doit ssh $pgxcUser@$1 chmod 0700 $2
 }
 
+function pgxc_clean_socket
+{
+	doit ssh $pgxcUser@$1 'rm -f /tmp/.s.*$2*'
+}
+
 # First argument is the nodename.  The second is "master", "slave" or "all".
 function pgxc_clean_node
 {
@@ -1706,13 +1778,17 @@ function pgxc_clean_node
 		case $1 in
 			master )
 				pgxc_clean_dir $gtmMasterServer $gtmMasterDir
+				pgxc_clean_socket $gtmMasterServer $gtmMasterPort
 				return;;
 			slave )
 				pgxc_clean_dir $gtmSlaveServer $gtmSlaveDir
+				pgxc_clean_socket $gtmSlaveServer $gtmSlavePort
 				return;;
 			all )
 				pgxc_clean_dir $gtmMasterServer $gtmMasterDir
+				pgxc_clean_socket $gtmMasterServer $gtmMasterPort
 				pgxc_clean_dir $gtmSlaveServer $gtmSlaveDir
+				pgxc_clean_socket $gtmSlaveServer $gtmSlavePort
 				return;;
 			* )
 				echo ERROR: invalid argument for pgxc_clean_node, $1
@@ -1722,6 +1798,7 @@ function pgxc_clean_node
 	for ((i= 0; i< ${#gtmProxyNames[@]}; i++)); do
 		if [ $1 == ${gtmProxyNames[$i]} ]; then
 			pgxc_clean_dir ${gtmProxyServers[$i]} ${gtmProxyDirs[$i]}
+			pgxc_clean_socket ${gtmProxyServers[$i]} ${gtmProxyPorts[$i]}
 			return;
 		fi
 	done
@@ -1731,13 +1808,17 @@ function pgxc_clean_node
 			case $1 in
 				master )
 					pgxc_clean_dir ${coordMasterServers[$i]} ${coordMasterDirs[$i]}
+					pgxc_clean_socket ${coordMasterServers[$i]} ${coordPorts[$i]}
 					return;;
 				slave )
 					pgxc_clean_dir ${coordSlaveServers[$i]} ${coordSlaveDirs[$i]}
+					pgxc_clean_socket ${coordSlaveServers[$i]} ${coordPorts[$i]}
 					return;;
 				all )
 					pgxc_clean_dir ${coordMasterServers[$i]} ${coordMasterDirs[$i]}
+					pgxc_clean_socket ${coordMasterServers[$i]} ${coordPorts[$i]}
 					pgxc_clean_dir ${coordSlaveServers[$i]} ${coordSlaveDirs[$i]}
+					pgxc_clean_socket ${coordSlaveServers[$i]} ${coordPorts[$i]}
 					return;;
 				* )
 					echo ERROR: invalid argument for pgxc_clean_node, $1
@@ -1751,13 +1832,17 @@ function pgxc_clean_node
 			case $1 in
 				master )
 					pgxc_clean_dir ${datanodeMasterServers[$i]} ${datanodeMasterDirs[$i]}
+					pgxc_clean_socket ${datanodeMasterServers[$i]} ${datanodePorts[$i]}
 					return;;
 				slave )
 					pgxc_clean_dir ${datanodeSlaveServers[$i]} ${datanodeSlaveDirs[$i]}
+					pgxc_clean_socket ${datanodeSlaveServers[$i]} ${datanodePorts[$i]}
 					return;;
 				all )
 					pgxc_clean_dir ${datanodeMasterServers[$i]} ${datanodeMasterDirs[$i]}
+					pgxc_clean_socket ${datanodeMasterServers[$i]} ${datanodePorts[$i]}
 					pgxc_clean_dir ${datanodeSlaveServers[$i]} ${datanodeSlaveDirs[$i]}
+					pgxc_clean_socket ${datanodeSlaveServers[$i]} ${datanodePorts[$i]}
 					return;;
 				* )
 					echo ERROR: invalid argument for pgxc_clean_node, $1
@@ -2239,6 +2324,7 @@ function pgxc_kill_gtm_master
 	vecho ================================================================
 	vecho Stopping GTM Master
 	doit ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcUser -9 gtm >/dev/null 2>&1"
+	pgxc_clean_socket $gtmMasterServer $gtmMasterPort
 }
 
 function pgxc_kill_gtm_slave
@@ -2250,6 +2336,7 @@ function pgxc_kill_gtm_slave
 	vecho ================================================================
 	vecho Stopping GTM Slave
 	doit ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcUser -9 gtm >/dev/null 2&>1"
+	pgxc_clean_socket $gtmSlaveServer $gtmSlavePort
 }
 
 function pgxc_failover_gtm
@@ -2455,6 +2542,7 @@ function pgxc_kill_gtm_proxy
 	for ((i=0; i< ${#gtmProxyNames[@]}; i++)); do
 		if [ $1 == ${gtmProxyNames[$i]} ]; then
 			doit ssh $pgxcUser@${gtmProxyServers[$i]} "killall -u $pgxcOwner -9 gtm_proxy >/dev/null 2>&1"
+			pgxc_clean_socket ${gtmProxyServers[$i]} ${gtmProxyPorts[$i]}
 			return
 		fi
 	done
@@ -2760,6 +2848,7 @@ function pgxc_kill_coordinator_master		# NOT TESTED YET
 				if [ $postmaster_pid != none ]; then
 					kill_all_child_parent ${coordMasterServers[$i]} $postmaster_pid
 				fi
+				pgxc_clean_socket ${coordMasterServers[$i]} ${coordPorts[$i]}
 			else
 				echo specified coordinator master does not exist, $1
 			fi
@@ -3059,6 +3148,7 @@ function pgxc_kill_coordinator_slave
 				if [ $postmaster_pid != none ]; then
 					kill_all_child_parent ${coordSlaveServers[$i]} $postmaster_pid
 				fi
+				pgxc_clean_socket ${coordSlaveServers[$i]} ${coordPorts[$i]}
 			else
 				echo specified coordinator slave does not exist, $1
 			fi
@@ -3121,7 +3211,7 @@ function pgxc_failover_coordinator
 			fi
 		    # Now promote the slave
 			vecho $0: Promoting coordinator slave at ${coordSlaveServers[$i]}:${coordSlaveDirs[$i]}
-			doit gtm_clean unregister -Z coordinator -p $gtmMasterPort -h gtmMasterServer ${coordNames[$i]}
+			doit gtm_util unregister -Z coordinator -p $gtmMasterPort -h gtmMasterServer ${coordNames[$i]}
 			# doit ssh $pgxcUser@$gtmMasterServer rm -f $gtmMasterDir/register.node
 			doit ssh $pgxcUser@${coordSlaveServers[$i]} pg_ctl promote -Z coordinator -D ${coordSlaveDirs[$i]}
 			ssh $pgxcUser@${coordSlaveServers[$i]} rm -rf $tmpDir/cmd.out
@@ -3437,6 +3527,7 @@ function pgxc_kill_datanode_master
 				if [ $postmaster_pid != none ]; then
 					kill_all_child_parent ${datanodeMasterServers[$i]} $postmaster_pid
 				fi
+				pgxc_clean_socket ${datanodeMasterServers[$i]} ${datanodePorts[$i]}
 			else
 				echo Dould not find specified coordinator master, $1
 			fi
@@ -3708,6 +3799,7 @@ function pgxc_kill_datanode_slave
 				if [ $postmaster_pid != none ]; then
 					kill_all_child_parent ${datanodeSlaveServers[$i]} $postmaster_pid
 				fi
+				pgxc_clean_socket ${datanodeSlaveServers[$i]} ${datanodePorts[$i]}
 			else
 				echo specified coordinator master does not exist, $1
 			fi
@@ -3750,13 +3842,13 @@ function pgxc_find_coordinator
 		return 2
 	fi
 	if [ "$1" == "none" ] || [ "$1" == "N/A" ]; then
-		eecho $progname-$fn invalid coordinator name $1
+		eecho "$progname:$fn" invalid coordinator name $1
 		return 2
 	fi
 	for ((i=0;i<${#coordNames[@]};i++));do
 		if [ "${coordNames[$i]}" == "$1" ]; then
 			if [ "${coordMasterServers[$i]}" == "none" ] || [ "${coordMasterServers[$i]}" == "N/A" ]; then
-				eecho $progname:$fn specified coordinator $1 does not have master
+				eecho "$progname:$fn" specified coordinator $1 does not have master
 				return 2
 			fi
 			selected_coord=${coordNames[$i]}
@@ -3883,7 +3975,7 @@ function pgxc_failover_datanode
 			fi
 		    # Now promote the slave
 			vecho $0: Promoting datnode slave at ${datanodeSlaveServers[$i]}:${datanodeSlaveDirs[$i]}
-			doit gtm_clean unregister -Z datanode -p $gtmMasterPort -h $gtmMasterServer ${datanodeNames[$i]}
+			doit gtm_util unregister -Z datanode -p $gtmMasterPort -h $gtmMasterServer ${datanodeNames[$i]}
 			# doit ssh $pgxcUser@$gtmMasterServer rm -f $gtmMasterDir/register.node
 			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} pg_ctl promote -Z datanode -D ${datanodeSlaveDirs[$i]}
 			ssh $pgxcUser@${datanodeSlaveServers[$i]} rm -rf $tmpDir/cmd.out
@@ -4151,27 +4243,49 @@ function pgxc_configure_nodes_all
 function start_all
 {
 	pgxc_start_gtm_master
-	pgxc_start_gtm_slave
-	pgxc_start_gtm_proxy_all
+	if [ $gtmSlave == y ]; then
+		pgxc_start_gtm_slave
+	fi
+	if [ $gtmProxy == y ]; then
+		pgxc_start_gtm_proxy_all
+	fi
 	pgxc_start_datanode_master_all
-	pgxc_start_datanode_slave_all
+	if [ $datanodeSlave == y ]; then
+		pgxc_start_datanode_slave_all
+	fi
 	pgxc_start_coordinator_master_all
-	pgxc_start_coordinator_slave_all
+	if [ $coordSlave == y ]; then
+		pgxc_start_coordinator_slave_all
+	fi
 }
 
 function init_all
 {
 	pgxc_init_gtm_master
-	pgxc_init_gtm_slave
-	pgxc_init_gtm_proxy_all
+	if [ $gtmSlave == y ]; then
+		pgxc_init_gtm_slave
+	fi
+	if [ $gtmProxy == y ]; then
+		pgxc_init_gtm_proxy_all
+	fi
 	pgxc_init_datanode_master_all
 	pgxc_start_gtm_master
-	pgxc_start_gtm_proxy_all
-	pgxc_init_datanode_slave_all
+	if [ $gtmProxy == y ]; then
+		pgxc_start_gtm_proxy_all
+	fi
+	if [ $datanodeSlave == y ]; then
+		pgxc_init_datanode_slave_all
+	fi
 	pgxc_init_coordinator_master_all
-	pgxc_init_coordinator_slave_all
-	pgxc_stop_gtm_proxy_all
-	pgxc_stop_gtm_slave
+	if [ $coordSlave == y ]; then
+		pgxc_init_coordinator_slave_all
+	fi
+	if [ $gtmProxy == y ]; then
+		pgxc_stop_gtm_proxy_all
+	fi
+	if [ $gtmSlave == y ]; then
+		pgxc_stop_gtm_slave
+	fi
 	pgxc_stop_gtm_master
 	start_all
 	pgxc_configure_nodes_all
@@ -4179,12 +4293,20 @@ function init_all
 
 function stop_all
 {
-	pgxc_stop_coordinator_slave_all
+	if [ $coordSlave == y ]; then
+		pgxc_stop_coordinator_slave_all
+	fi
 	pgxc_stop_coordinator_master_all
-	pgxc_stop_datanode_slave_all
+	if [ $datanodeSlave == y ]; then
+		pgxc_stop_datanode_slave_all
+	fi
 	pgxc_stop_datanode_master_all
-	pgxc_stop_gtm_proxy_all
-	pgxc_stop_gtm_slave
+	if [ $gtmProxy == y ]; then
+		pgxc_stop_gtm_proxy_all
+	fi
+	if [ $gtmSlave == y ]; then
+		pgxc_stop_gtm_slave
+	fi
 	pgxc_stop_gtm_master
 }
 
@@ -4196,6 +4318,53 @@ function clean_all
 	stop_all
 	pgxc_clean_node_all
 	immediate="$immediate_bk"
+}
+
+function pgxc_kill_something
+{
+	local n
+
+	if [ "$1" == "" ]; then
+		return 2
+	fi
+	for ((n=0; n<${#gtmProxyNames[@]}; n++)); do
+		if [ "$1" == "${gtmProxyNames[$n]}" ]; then
+			pgxc_kill_gtm_proxy $1
+			return
+		fi
+	done
+	if [ "$2" != "master" ] && [ "$2" != "slave" ]; then
+		eecho Specify master or slave.
+		return 2
+	fi
+	if [ $1 == $gtmName ]; then
+		if [ $2 == master ]; then
+			pgxc_kill_gtm_master
+		else
+			pgxc_kill_gtm_slave
+		fi
+		return;
+	fi
+	for ((n=0; n<${#coordNames[@]}; n++)); do
+		if [ $1 == ${coordNames[$n]} ]; then
+			if [ $2 == master ]; then
+				pgxc_kill_coordinator_master $1
+			else
+				pgxc_kill_coordinator_slave $1
+			fi
+			return;
+		fi
+	done
+	for ((n=0; n<${#datanodeNames[@]}; n++)); do
+		if [ $1 == ${datanodeNames[$n]} ]; then
+			if [ $2 == master ]; then
+				pgxc_kill_datanode_master $1
+			else
+				pgxc_kill_datanode_slave $1
+			fi
+			return;
+		fi
+	done
 }
 
 function kill_all
@@ -4319,120 +4488,196 @@ makeServerList
 
 # For interactive operation ---> Finally this should be a part of pgxc_ctl interactive command
 # interactive=y --> should be set by options
+firstline=y
+lastline=n
 while [ 1 ]; do
-	echo -n "$xc_prompt"
-	read cmdname p1 p2 p3 p4 cmdparam
+	if [ $lastline = "y" ]; then
+		break
+	fi
+	if [ $firstline == "y" ] && [ "$1" != "" ]; then
+		cmdname=$1;	shift
+		p1=$1; shift
+		p2=$1; shift
+		p3=$1; shift
+		p4=$1; shift
+		cmdparam=$*
+		firstline=n
+		lastline=y
+		set_interactive off
+	else
+		echo -n "$xc_prompt"
+		read cmdname p1 p2 p3 p4 cmdparam
+	fi
 
 	if [ "$cmdname" == "" ];  then
 		continue
 	fi
-	if [ "$cmdname" == "Psql" ]; then
-		if [ "$p1" == "" ]; then
-			pgxc_select_coordinator
-			if [ "$selected_coord" == "none" ]; then
-				eecho No available coordinator found
-				continue;
-			fi
-		elif [ "$p1" == '-' ]; then
-			pgxc_select_coordinator
-			if [ "$selected_coord" == "none" ]; then
-				eecho No available coordinator found
-				continue;
-			fi
-		else
-			pgxc_find_coordinator $p1
-			if [ "$selected_coord" == "none" ]; then
-				continue;
-			fi
+	if [ "$cmdname" == "end" ] || [ "$cmdname" == "q" ]; then
+		break
+	fi
+
+	# Init --- Now accepts only all or default to initialize everything here.
+	if [ "$cmdname" == "init" ]; then
+		if [ "$p1" != "" ] && [ "$p1" != "all" ]; then
+			eecho Invalid init command argument, $p1
+			continue
 		fi
-		psql -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
+		init_all
+		continue
+	fi
+
+	# Kill -- kills processes will kill command
+	if [ "$cmdname" == "kill" ]; then
+		if [ "$p1" == "" ]; then
+			eecho Specify what to kill "("all/component name")"
+		elif [ "$p1" == "all" ]; then
+			kill_all
+		else
+			pgxc_kill_something $p1 $p2 $p3 $p4 $cmdparam
+			continue
+		fi
+	fi
+	if [ "$cmdname" == "Psql" ]; then
+		if [ "$p1" != "-" ]; then
+			pgxc_select_coordinator
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			psql -p $selected_coord_port -h $selected_coord_host $p1 $p2 $p3 $p4 $cmdparam
+			continue
+		else
+			pgxc_find_coordinator $p2
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			psql -p $selected_coord_port -h $selected_coord_host $p3 $p4 $cmdparam
+			continue
+		fi
 		continue
 	fi
 	if [ "$cmdname" == "Createdb" ]; then
 		if [ "$p1" == "" ]; then
-			eecho Specify coordinator name or -
+			eecho Specify database name to create
 			continue
 		fi
 		if [ "$p1" == "-" ]; then
-			pgxc_select_coordinator
+			pgxc_find_coordinator $p2
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			createdb -p $selected_coord_port -h $selected_coord_host $p3 $p4 $cmdparam
+			continue
 		else
-			pgxc_find_coordinator $p1
+			pgxc_select_coordinator
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			createdb -p $selected_coord_port -h $selected_coord_host $p1 $p2 $p3 $p4 $cmdparam
+			continue
 		fi
-		if [ "$selected_coord" == "none" ]; then
-			eecho No available coordinator found
-			continue;
-		fi
-		createdb -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
-		continue
 	fi
 	if [ "$cmdname" == "Dropdb" ]; then
 		if [ "$p1" == "" ]; then
-			eecho Specify coordinator name or -
+			eecho Specify database name to drop
 			continue
 		fi
 		if [ "$p1" == "-" ]; then
-			pgxc_select_coordinator
+			pgxc_find_coordinator $p2
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			if [ "$p3" == "" ]; then
+				echo Specify database name to drop
+				continue
+			fi
+			pgxc_clean_connection_all $p3
+			dropdb -p $selected_coord_port -h $selected_coord_host $p3 $p4 $cmdparam
+			continue
 		else
-			pgxc_find_coordinator $p1
+			pgxc_select_coordinator
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			pgxc_clean_connection_all $p1
+			dropdb -p $selected_coord_port -h $selected_coord_host $p1 $p2 $p3 $p4 $cmdparam
+			continue
 		fi
-		if [ "$selected_coord" == "none" ]; then
-			eecho No available coordinator found
-			continue;
-		fi
-		pgxc_clean_connection_all $p2
-		dropdb -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
-		continue
 	fi
 	if [ "$cmdname" == "Createuser" ]; then
 		if [ "$p1" == "" ]; then
-			eecho Specify coordinator name or -
+			eecho Specify coordinator user name to create
 			continue
 		fi
 		if [ "$p1" == "-" ]; then
-			pgxc_select_coordinator
+			pgxc_find_coordinator $p2
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			createuser -p $selected_coord_port -h $selected_coord_host $p3 $p4 $cmdparam
+			continue
 		else
-			pgxc_find_coordinator $p1
+			pgxc_select_coordinator
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			createuser -p $selected_coord_port -h $selected_coord_host $p1 $p2 $p3 $p4 $cmdparam
+			continue
 		fi
-		if [ "$selected_coord" == "none" ]; then
-			eecho No available coordinator found
-			continue;
-		fi
-		createuser -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
 		continue
 	fi
 	if [ "$cmdname" == "Dropuser" ]; then
 		if [ "$p1" == "" ]; then
-			eecho Specify coordinator name or -
+			eecho Specify user name to drop
 			continue
 		fi
 		if [ "$p1" == "-" ]; then
-			pgxc_select_coordinator
+			pgxc_find_coordinator $p2
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			# we may need to clean connection for this user
+			dropuser -p $selected_coord_port -h $selected_coord_host $p3 $p4 $cmdparam
+			continue
 		else
-			pgxc_find_coordinator $p1
+			pgxc_select_coordinator
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			# we may need to clean connection for this user
+			dropuser -p $selected_coord_port -h $selected_coord_host $p1 $p2 $p3 $p4 $cmdparam
+			continue
 		fi
-		if [ "$selected_coord" == "none" ]; then
-			eecho No available coordinator found
-			continue;
-		fi
-		dropuser -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
 		continue
 	fi
 	if [ "$cmdname" == "Vacuumdb" ]; then
-		if [ "$p1" == "" ]; then
-			eecho Specify coordinator name or -
+		if [ "$p1" != "-" ]; then
+			pgxc_select_coordinator
+			continue
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			vacuumdb -p $selected_coord_port -h $selected_coord_host $p1 $p2 $p3 $p4 $cmdparam
+			continue
+		else
+			pgxc_find_coordinator $p2
+			if [ "$selected_coord" == "none" ]; then
+				eecho No available coordinator found
+				continue;
+			fi
+			vacuumdb -p $selected_coord_port -h $selected_coord_host $p3 $p4 $cmdparam
 			continue
 		fi
-		if [ "$p1" == "-" ]; then
-			pgxc_select_coordinator
-		else
-			pgxc_find_coordinator $p1
-		fi
-		if [ "$selected_coord" == "none" ]; then
-			eecho No available coordinator found
-			continue;
-		fi
-		vacuumdb -p $selected_coord_port -h $selected_coord_host $p2 $p3 $p4 $cmdparam
-		continue
 	fi
 	if [ "$cmdname" == "prepare" ]; then
 		if [ "$p1" == "config" ]; then
@@ -4473,6 +4718,15 @@ while [ 1 ]; do
 			else
 				echo ""
 			fi
+		elif [ "$p1" == "gtm" ]; then
+			echo GTM list
+			pgxc_ctl_show_component $gtmName
+		elif [ "$p1" == "gtm_proxy" ]; then
+			pgxc_ctl_show_gtm_proxy_all
+		elif [ "$p1" == "coordinator" ]; then
+			pgxc_ctl_show_coordinator_all
+		elif [ "$p1" == "datanode" ]; then
+			pgxc_ctl_show_datanode_all
 		else
 			pgxc_ctl_show_component $p1 $p2 $p3 $p4 $cmdparam
 		fi
@@ -4488,8 +4742,15 @@ while [ 1 ]; do
 		fi
 		continue
 	fi
-	if [ "$cmdname" == "end" ] || [ "$cmdname" == "q" ]; then
-		break
+	if [ "$cmdname" == "deploy" ]; then
+		if [ "$p1" == "all" ]; then
+			pgxc_deploy_all
+		elif [ "$p1" == "" ]; then
+			eecho Specify server name to deploy.
+		else
+			pgxc_deploy_individual $p1
+		fi
+		continue
 	fi
 	# Need the following trick to handle variable value assignment and echo.
 	cat > $localTmpDir/wk.cmd <<EOF

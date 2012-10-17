@@ -8,11 +8,11 @@
 #
 #-------------------------------------------------------------------------
 
-PGFILEDESC = "gtm_clean - housekeeping GTM status"
+PGFILEDESC = "gtm_util - housekeeping GTM status"
 PGAPPICON = win32
 
-PROGRAM= gtm_clean
-OBJS= gtm_clean.o mcxt.o
+PROGRAM= gtm_util
+OBJS= gtm_util.o mcxt.o
 
 #Include GTM objects
 gtm_builddir = $(top_builddir)/src/gtm
@@ -28,7 +28,7 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
-subdir = contrib/gtm_clean
+subdir = contrib/gtm_util
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
