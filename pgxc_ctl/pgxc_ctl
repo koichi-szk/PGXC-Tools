@@ -2482,7 +2482,12 @@ function pgxc_start_gtm_proxy_all
 	fi
 	for((i=0;i<${#gtmProxyNames[@]};i++)); do
 		if [ ${gtmProxyServers[$i]} != none ] && [ ${gtmProxyServers[$i]} != N/A ]; then
-			pgxc_start_gtm_proxy ${gtmProxyNames[$i]}
+			pgxc_monitor -Z gtm -p ${gtmProxyPorts[$i]} -h ${gtmProxyServers[$i]}
+			if [ $? -eq 0 ]; then
+				vecho gtm_proxy"("${gtpmProxyNames[$i]}")" is already running.
+			else
+				pgxc_start_gtm_proxy ${gtmProxyNames[$i]}
+			fi
 		fi
 	done
 }
@@ -2786,7 +2791,12 @@ function pgxc_start_coordinator_master_all
 	local i
 	for ((i=0; i< ${#coordNames[@]}; i++)); do
 		if [ ${coordMasterServers[$i]} != none ] && [ ${coordMasterServers[$i]} != N/A ]; then
-			pgxc_start_coordinator_master ${coordNames[$i]}
+			pgxc_monitor -Z node -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} -U $pgxcOwner -d postgres
+			if [ $? -eq 0 ]; then
+				eecho coordinator master "("${coordNames[$i]}")" is already running
+			else
+				pgxc_start_coordinator_master ${coordNames[$i]}
+			fi
 		fi
 	done
 }
@@ -2993,6 +3003,11 @@ function pgxc_init_coordinator_slave_all
 	fi
 	for ((i=0;i<${#coordNames[@]};i++)); do
 		if [ ${coordNames[$i]} != none ] && [ ${coordNames[$i]} != N/A ]; then
+			psql -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2> /dev/null
+			if [ $? -eq 0 ]; then
+				eecho Coordinator slave "("${coordNames[$i]}")" is already running.
+				return 1
+			fi
 			pgxc_init_coordinator_slave ${coordNames[$i]}
 		fi
 	done
@@ -3663,6 +3678,11 @@ function pgxc_start_datanode_slave
 				return 1
 			fi
 		    # Start the slave
+			psql -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2> /dev/null
+			if [ $? -eq 0 ] ; then
+				echo ERROR: datanode slave "("${datanodeNames[$i]}")" is already running
+				return 1
+			fi
 			doit ssh $pgxcUser@${datanodeSlaveServers[$i]} "pg_ctl start -Z datanode -D ${datanodeSlaveDirs[$i]} -o -i > $tmpDir/coord.out"
 			do_stdout ${datanodeSlaveServers[$i]} $tmpDir/coord.out
 		    # Change the master to synchronous mode
@@ -4320,6 +4340,281 @@ function clean_all
 	immediate="$immediate_bk"
 }
 
+# Start --- all | gtm [master|slave|all] | gtm_proxy | coordinator [master|slave|all] | datanode [master|slave|all] | nodename [master|slave|all]
+function pgxc_start_something
+{
+	local i
+
+	if [ "$1" == "all" ] || [ "$1" == "" ]; then
+		start_all
+		return
+	fi
+	if [ "$1" == "gtm" ] || [ "$1" == "$gtmName"]; then
+		if [ "$2" == "master" ]; then
+			pgxc_monitor -Z gtm $gtmMasterPort -h $gtmMasterServer
+			if [ $? -eq 0 ]; then
+				eecho GTM master is already running.
+				return 1
+			fi
+			pgxc_start_gtm_master
+			return;
+		fi
+		if [ "$2" == "slave" ]; then
+			if [ $gtmSlave != y ]; then
+				eecho GTM Slave is not configured.  Cannot start.
+				return;
+			fi
+			pgxc_monitor -Z gtm -p $gtmMasterPort -h $gtmMasterServer
+			if [ $? -eq 0 ]; then
+				pgxc_start_gtm_slave
+			else
+				eecho GTM master is not running. Cannot start the slave.
+			fi
+			return;
+		fi
+		if [ "$2" == "all" ] || [ "$2" == "" ]; then
+			pgxc_monitor -Z gtm $gtmMasterPort -h $gtmMasterServer
+			if [ $? -eq 0 ]; then
+				eecho GTM master is already running.
+				return 1
+			fi
+			pgxc_start_gtm_master
+			if [ $gtmSlave == y ]; then
+				pgxc_start_gtm_slave
+			fi
+		fi
+		return
+	fi
+	if [ "$1" == "gtm_proxy" ]; then
+		pgxc_start_gtm_proxy_all
+		return
+	fi
+	if [ "$1" == "coordinator" ]; then
+		if [ "$2" == "master" ]; then
+			pgxc_start_coordinator_master_all
+		elif [ "$2" == "slave" ]; then
+			pgxc_start_coordinator_slave_all
+		elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+			pgxc_start_coordinator_master_all
+			pgxc_start_coordinator_slave_all
+		else
+			eecho Invalid argument for start coordinator command, $2
+		fi
+		return
+	fi
+	if [ "$1" == "datanode" ]; then
+		if [ "$2" == "master" ]; then
+			pgxc_start_datanode_master_all
+		elif [ "$2" == "slave" ]; then
+			pgxc_start_datanode_slave_all
+		elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+			pgxc_start_datanode_master_all
+			pgxc_start_datanode_slave_all
+		else
+			eecho Invalid argument for start coordinator command, $2
+		fi
+		return
+	fi
+	# General nodename specification
+	# Have done GTM
+	# GTM proxy?
+	for ((i=0; i<${#gtmProxyNames[@]}; i++)); do
+		if [ "$1" == "${gtmProxyNames[$i]}" ]; then
+			pgxc_start_gtm_proxy $1
+			return
+		fi
+	done
+	# Coordinator?
+	for ((i=0; i<${#coordNames[@]}; i++)); do
+		if [ "$1" == "${coordNames[$i]}" ]; then
+			if [ "$2" == "master" ]; then
+				pgxc_start_coordinator_master $1
+			elif [ "$2" == "slave" ]; then
+				pgxc_start_coordinator_slave $1
+			elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+				pgxc_start_coordinator_master $1
+				pgxc_start_coordinator_slave $1
+			else
+				eecho Invalid start coordinator command option, $2
+			fi
+			return
+		fi
+	done
+	# Datanode?
+	for ((i=0; i<${#datanodeNames[@]}; i++)); do
+		if [ "$1" == "${datanodeNames[$i]}" ]; then
+			if [ "$2" == "master" ]; then
+				pgxc_start_datanode_master $1
+			elif [ "$2" == "slave" ]; then
+				pgxc_start_datanode_slave $1
+			elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+				pgxc_start_datanode_master $1
+				pgxc_start_datanode_slave $1
+			else
+				eecho Invalid start datanode command option, $2
+			fi
+			return
+		fi
+	done
+	eecho No component named $1 found
+	return 1
+}
+
+# Stop --- all | gtm [master|slave|all] | gtm_proxy | coordinator [master|slave|all] | datanode [master|slave|all] | nodename [master|slave|all]
+function pgxc_stop_something
+{
+	local i
+
+	if [ "$1" == "all" ] || [ "$1" == "" ]; then
+		stop_all
+		return
+	fi
+	if [ "$1" == "gtm" ] || [ "$1" == "$gtmName" ]; then
+		if [ "$2" == "master" ]; then
+			pgxc_monitor -Z gtm $gtmMasterPort -h $gtmMasterServer
+			if [ $? -ne 0 ]; then
+				eecho GTM master is not running. Cannot stop it.
+				return 1
+			fi
+			pgxc_stop_gtm_master
+			return;
+		fi
+		if [ "$2" == "slave" ]; then
+			if [ $gtmSlave != y ]; then
+				eecho GTM Slave is not configured.  Cannot stop.
+				return;
+			fi
+			pgxc_monitor -Z gtm -p $gtmSlavePort -h $gtmSlaveServer
+			if [ $? -eq 0 ]; then
+				pgxc_stop_gtm_slave
+			else
+				eecho GTM slave is not running. Cannot stop it.
+			fi
+			return;
+		fi
+		if [ "$2" == "all" ] || [ "$2" == "" ]; then
+			pgxc_monitor -Z gtm $gtmMasterPort -h $gtmMasterServer
+			if [ $? -ne 0 ]; then
+				eecho GTM master is not running.
+			else
+				pgxc_start_gtm_master
+			fi
+			if [ $gtmSlave == y ]; then
+				pgxc_monitor -Z gtm -p $gtmSlavePort -h gtmSlaveServer
+				if [ $? -eq 0 ]; then
+					pgxc_start_gtm_slave
+				else
+					eecho GTM slave is not running
+				fi
+			fi
+			return
+		else
+			eecho Invalid stop gtm option, $2
+			return 2
+		fi
+		return
+	fi
+	if [ "$1" == "gtm_proxy" ]; then
+		pgxc_stop_gtm_proxy_all
+		return
+	fi
+	if [ "$1" == "coordinator" ]; then
+		if [ "$2" == "master" ]; then
+			pgxc_stop_coordinator_master_all
+		elif [ "$2" == "slave" ]; then
+			pgxc_stop_coordinator_slave_all
+		elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+			pgxc_stop_coordinator_master_all
+			pgxc_stop_coordinator_slave_all
+		else
+			eecho Invalid argument for start coordinator command, $2
+		fi
+		return
+	fi
+	if [ "$1" == "datanode" ]; then
+		if [ "$2" == "master" ]; then
+			pgxc_stop_datanode_master_all
+		elif [ "$2" == "slave" ]; then
+			pgxc_stop_datanode_slave_all
+		elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+			pgxc_stop_datanode_master_all
+			pgxc_stop_datanode_slave_all
+		else
+			eecho Invalid argument for stop coordinator command, $2
+		fi
+		return
+	fi
+	# General nodename specification
+	# GTM case: has been handled
+	# GTM proxy?
+	for ((i=0; i<${#gtmProxyNames[@]}; i++)); do
+		if [ "$1" == "${gtmProxyNames[$i]}" ]; then
+			pgxc_stop_gtm_proxy $1
+			return
+		fi
+	done
+	# Coordinator?
+	for ((i=0; i<${#coordNames[@]}; i++)); do
+		if [ "$1" == "${coordNames[$i]}" ]; then
+			if [ "$2" == "master" ]; then
+				pgxc_stop_coordinator_master $1
+			elif [ "$2" == "slave" ]; then
+				pgxc_stop_coordinator_slave $1
+			elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+				pgxc_stop_coordinator_master $1
+				pgxc_stop_coordinator_slave $1
+			else
+				eecho Invalid stop coordinator command option, $2
+			fi
+			return
+		fi
+	done
+	# Datanode?
+	for ((i=0; i<${#datanodeNames[@]}; i++)); do
+		if [ "$1" == "${datanodeNames[$i]}" ]; then
+			if [ "$2" == "master" ]; then
+				pgxc_stop_datanode_master $1
+			elif [ "$2" == "slave" ]; then
+				pgxc_stop_datanode_slave $1
+			elif [ "$2" == "all" ] || [ "$2" == "" ]; then
+				pgxc_stop_datanode_master $1
+				pgxc_stop_datanode_slave $1
+			else
+				eecho Invalid stop datanode command option, $2
+			fi
+			return
+		fi
+	done
+	eecho No component named $1 found
+	return 1
+}
+
+# failover --- gtm | component name
+function pgxc_failover_something
+{
+	local i
+
+	if [ "$1" == "gtm" ] || [ "$1" == "$gtmName" ]; then
+		pgxc_failover_gtm
+		pgxc_reconnect_gtm_proxy_all
+		return
+	fi
+	for ((i=0; i<${#coordNames[@]};i++)); do
+		if [ "$1" == ${coordNames[$i]} ]; then
+			pgxc_failover_coordinator $1
+			return
+		fi
+	done
+	for ((i=0; i<${#datanodeNames[@]}; i++)); do
+		if [ "$1" == ${datanodeNames[$i]} ]; then
+			pgxc_failover_datanode $1
+			return
+		fi
+	done
+	eecho No such componen found to failover $1
+	return 1
+}
+
 function pgxc_kill_something
 {
 	local n
@@ -4517,6 +4812,8 @@ while [ 1 ]; do
 	fi
 
 	# Init --- Now accepts only all or default to initialize everything here.
+	# If you'd like to initialize individual component, use internal function
+	# directly.
 	if [ "$cmdname" == "init" ]; then
 		if [ "$p1" != "" ] && [ "$p1" != "all" ]; then
 			eecho Invalid init command argument, $p1
@@ -4526,6 +4823,17 @@ while [ 1 ]; do
 		continue
 	fi
 
+	# Start --- all | gtm [master|slave|all] | gtm_proxy | coordinator [master|slave|all] | datanode [master|slave|all] | nodename [master|slave|all]
+	if [ "$cmdname" == "start" ]; then
+		pgxc_start_something $p1 $p2 $p3 $p4 $cmdparam
+		continue
+	fi
+
+	# Stop --- all | gtp [master|slave|all] | gtm_proxy | coordiantor [master|slave|all] | datanode [master|slave|all] | nodename [master|slave|all]
+	if [ "$cmdname" == "stop" ]; then
+		pgxc_stop_something $p1 $p2 $p3 $p4 $cmdparam
+		continue
+	fi
 	# Kill -- kills processes will kill command
 	if [ "$cmdname" == "kill" ]; then
 		if [ "$p1" == "" ]; then
@@ -4555,6 +4863,20 @@ while [ 1 ]; do
 			psql -p $selected_coord_port -h $selected_coord_host $p3 $p4 $cmdparam
 			continue
 		fi
+		continue
+	fi
+	if [ "$cmdname" == "clean" ]; then
+		if [ "$p1" == "all" ] || [ "$p1" == "" ]; then
+			clean_all
+		else
+			pgxc_clean_node $p1 $p2 $p3 $p4 $cmdparam
+		fi
+		continue
+	fi
+
+	# failover --- gtm | component name
+	if [ "$cmdname" == "failover" ]; then
+		pgxc_failover_something $p1 $p2 $p3 $p4 $cmdparam
 		continue
 	fi
 	if [ "$cmdname" == "Createdb" ]; then
