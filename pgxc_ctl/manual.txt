@@ -1,0 +1,525 @@
+Pgxc_ctl cakes care of configuration, initialization, start, stop,
+monitor and failover of postgres-xc components.  Configuration is a
+great work and you should plan your postgres-xc configuration
+carefully.  This manual describes how to use pgxc_ctl to help these
+tiring work.
+
+1. Installing pgxc_ctl
+
+pgxc_ctl is a bash script.  You can copy pgxc_ctl file to one of your
+PATH and give x privilebe like
+
+$ cp pgxc_ctl $HOME/bin
+$ chmod +x $HOME/bin/pgxc_ctl
+$
+
+You don't have to install pgxc_ctl to the server where one of postgres-xc
+component is supposed to run.   You can run pgxc_ctl in a separate
+server as postgres-xc console.   This manual supposes so.
+
+It is highly recommended to setup ssh-agent authentication to avoid
+typing password each time pgcx_ctl issues ssh.
+
+2. Starging pgxc_ctl
+
+From your bash prompt, simply type pgxc_ctl.  You will have the
+following prompt:
+
+$ pgxc_ctl
+PGXC$ 
+
+Then you can type pgxc_ctl commands.  pgxc_ctl accepts several optins
+and also you can specify pgxc_ctl command in pgxc_ctl command line as
+well.
+
+3. pgxc_ctl option
+
+pgxc_ctl accepts several options to control its behavior.  Generally,
+pgxc_ctl command format is as follows:
+
+pgxc [options ... ] pgxc_command
+
+Options are as follows:
+
+-c | --configuration configfile: Specifies the configuration file.
+                Specify the file name after this option. No default
+                file.  pgxc_ctl writes updates to the control file to
+                help the following staupts.  If you dont' specify this
+                option, then the default target to write this update
+                will be $HOME/pgxc/pgxcConfig.
+
+--debug Specifies debug option, which runs additional scripts for
+                debug.  Only for internal or development use of
+                pgxc_ctl.
+
+-f file: Reads pgxc_ctl commands from the file, instead of stdin.
+
+--silent: Sets verbose mode off.  pgxc_ctl write as minimum message as
+                possible.  This is the default behavior.
+
+-v or --verbose: Sets verbose mode on.  pgxc_ctl tries to write as many
+                messages as possible.
+
+--with-log: Enable logging.  Default is specified in the configuration.
+
+--without-log: Disable logging.  Deafult is specified in the configuration.
+
+4. Configure your postgres-xc cluster
+
+4.1 XC components
+
+Postgres-xc consists of the following components.  You should consider
+     how many of them to configure.
+
+GTM: global transaction manager.  You must have one in the cluster.
+     For production, GTM should be configured in a separate server.
+     GTM can have a slave which can fail over when GTM fails.  GTM
+     slave can be installed (hopefully) in a separate server but can
+     be intalled in one of the others where you have gtm_proxy,
+     coordinators and datanodes.
+
+GTM-Proxy: GTM communication aid and help GTM failover.  Need one in
+     each server where you have coordinator or datanode as described
+     below.
+
+Coordinator: Takes care of application connection and statement
+     handling.  For simplicity and load balancing, it's a good idea to
+     install coordinator to each server other than where GTM (and GTM
+     slave) are configured.  Coordinator can have a slave.  Slave can
+     be configured in one of the servers where other coordinator
+     master is installed.
+
+Datanode: Store the data and run local SQL statement supplied by a
+     coordiantor.  Datanode should also be configured in all the
+     servers except those for GTM (and GTM slave).
+
+Each component requires the following resources:
+
+a) hostname
+b) port
+c) work directory
+
+In the same host, you must not assign the same port and the same work
+directory to multiple components.  pgxc_ctl checks this.
+
+When assign the port, you should be careful not to assign already
+assigned one to other service.
+
+Also, please note the following:
+
+1) You don't have to assign the same port to GTM master and GTM slave.
+2) Coordinator master and coordinator slave must share the same port.
+3) Datanode master and datanode slave must share the same port.
+
+2) and 3) are not required by postgres-xc but requirement of pgxc_ctl.
+
+4.2 Configuration
+
+You can configure your postgres-xc cluster by editing pgxc_ctl
+directly.  But it can be dangerous because you the edit can be a mess.
+It is much better to have separate configuration file.   You can
+create configuration file template by typing
+
+PGXC$ mkdir -p $HOME/pgxc
+PGXC$ prepare config
+PGXC$ 
+
+You have your pgxcConfig file at $HOME/pgxc.   You can edit it to
+configure your postgres-xc cluseter.   When it messes up, you can
+again create the template with "prepare config" command.
+
+Then you can edit this file to configure.  This file is bash script
+file dfining many variables to define the cluster configuration.  With
+template values and comments, it will be easy to understand what they
+mean.  The following describes each variable in the order you find in
+the configuraton template.
+
+---- Overall ---------
+
+pgxcOwner: Name of the database user who owns whole Postgres-XC
+          database.  This can be diferrent from $pgxcUser.  In the
+          present version, we assume these two should be the same
+          though.
+
+pgxcUser: Name of the operating system user you are logging in as
+          postgres-xc owner.   At present, this should be the same as
+          $pgxcOwner.
+
+pgxcInstallDir: Postgres-XC should at least be installed in the server
+          you are running pgxc_ctl.  This variable specifies this
+          installation directory, as you specify with --prefix= option
+          of configure command when you build it.  All the
+          installation will be copied to the same directory at each
+          servers and you should give appropriate privilege to this
+          directory in advance.
+
+tmpDir: Directory used for work at each server except for the one
+          pgxc_ctl runs.  You need full access to this directory at
+          all the servers.
+
+localTmpDir: Local directory used by pgxc_ctl itself.  You need full
+          access to this directory.
+
+logOpt:  Log option.  Specify the value "y" if you'd like to have
+          operation logs of pgxc_ctl.   Specify "n" otherwise.   Still
+          under the development.
+
+logDir:  Directory for the log.  You need to set write privilege to
+          this directory in advance.
+
+configBackup: Option if you backup the configuration file to a remote
+          server. Specify "y" if you'd like to backup the
+          configuration file.   "n" otherwise.
+
+configBackupHost: Host name (or IP address) where you backup the
+          configuration file.   Effective when configuration file
+          backup is enabled.
+
+configBackupFile: Name of the configuration backup file.  Effective
+          when configuration file backup is enabled.
+
+ ---- GTM ----
+
+gtmName: Name of GTM.
+
+gtmMasterServer: Host name where GTM master runs.
+
+gtmMasterPort: Listening port number of GTM master.
+
+gtmMasterDir: Work directory for GTM master.
+
+gtmExtraConfig: If you'd like to add specific configuration to both
+          GTM master and slave, specify the file which contails such
+          lines for gtm.config file.  Otherwise, specify "none"
+
+gtmMasterSpecificExtraConfig: If you'd like to add specific
+          configuration only to GTM master, specify the file which
+          contails such lines for gtm.config file.  Otherwise, specify
+          "none"
+
+gtmSlave: Option to enable GTM slave.   Specify "y" to enable, "n"
+          otherwise.
+
+gtmSlaveServer: Host name where GTM slave runs.  Effective only when
+          GTM slave is effective.
+
+gtmSlavePort: Listening port number of GTM slave
+
+gtmSlaveDir: Work directory for GTM slave
+
+gtmSlaveSpecificExtraConfig: If you'd like to add specific
+          configuration only to GTM slave, specify the file which
+          contails such lines for gtm.config file.  Otherwise, specify
+          "none"
+
+
+---- GTM Proxy ----
+
+gtmProxyDir: This is a shortcut used to assign same work directory to
+          all the GTM proxies.  You don't have to worry about it when
+          you specify these values manually.
+
+gtmProxy: Option to use GTM proxy.   You don't have to use GTM proxy
+          and connect to GTM directory.   Specify "y" to enable GTM
+          proxy, "n" otherwise.  Pgxc_ctl assumes you configure gtm
+          proxy. 
+
+gtmProxyNames: Specify unique name for each GTM proxy.  This is an
+          array.  In the template, we have four servers for
+          coordinator and datanode and we have four gtm proxy as
+          well.
+
+gtmProxyServers: Specify host name where each of the GTM Proxy runs.
+          Specify server name as the same order as $gtmProxyNames
+
+gtmProxyPorts: Specify listening port number for each GTM proxy.
+
+gtmProxyDirs: Specify wor directory for each GTM proxy.
+
+gtmPxyExtraConfig: If you'd like to add configuration value to all the
+          GTM proxy, specify the file name which contails such lines
+          for gtm_proxy.conf.   Otherwise specify "none".
+
+gtmPxySpecificExtraConfig: If you'd like to add specific configuration
+          value to each GTM proxy, specify file names with  such lines
+          for gtm_proxy.conf.   Otherwise specify "none".
+
+--- Coordinators ----
+
+coordMasterDir: Shortcut to assign the same work directory to all the
+          coordinator masters.  Not needed if you specify these
+          manually.
+
+coordSlaveDir: Shortcut to assign the same work directory to all the
+          coordinator slaves.  Not needed if you specify these
+          manually.
+
+coordArchLogDir: Shortcut to assign the same WAL archive directory to
+          all the coordinator slaves.  Not needed if you specify these
+          manually. 
+
+
+coordNames: Array to specify coordinator names.
+
+coordPorts: Array of the listening port number for each coordinator
+          (master and slave use the same port).
+
+poolerPorts: Array of the portnumber for each pooler.  Pooler takes
+          care fo the connection between coordinator and datanode and
+          needs separate port.
+
+coordPgHbaEntries: Array of CIDR addresses to be added to
+          pg_hba.conf.  Will create pg_hba.conf file entry with
+          $pgxcOwner user.
+
+coordMaterServers: Array of the host name where each coordinator
+          master runs.  Specify in the order of $coordNames above.
+
+coordMasterDirs: Array of coordiantor master work directory.
+
+coordMaxWalSender: shortcut to assign the same value to each member of
+          coordMaxWalSenders.  Not needed if you assign the value
+          manually.
+
+coordMaxWalSenders: Array of coordinator max_wal_senders value.
+
+coordSlave: Specify "y" if you configure coordinator slave.   "n"
+          otherwise.
+
+coordSlaveServers: Array of the hostname where slave of each
+          coordinator runs.  Specify "none" if you don't configure the
+          slave for specific coordinator.
+
+coordSlaveDirs:  Array of work directory for each coordinator slaves.
+
+coordArchLogDirs: Array of WAL archive log directory for each datanode
+          slave.
+
+coordExtraConfig:  If you would like to add extra configuration value
+          for all the coordinators, specify the file name containing
+          such lines for postgresql.conf.  Specify "none" otherwise.
+
+coordSpecificExtraConfig:  Array of the filename which contains extra
+          configuration values for each coordinator.   Specify "none"
+          if you don't have such file.
+
+coordExtraPgHba: File name which contains entries for all the
+          coordinator's pg_hba.conf file.  Specify "none" if you don't
+          have such file.
+
+coordSpecificExtraPgHba: Array of file names which contain specific
+          extra pg_hba.conf entry for each coordinator.  Specify
+          "none" if you don't have such file.
+
+---- Datanodes -----
+
+datanodeMasterDir: Shortcut to assign the same work directory to all
+          the datanode masters.  Not needed if you specify these
+          manually.
+
+datanodeSlaveDir: Shortcut to assign the same work directory to all
+          the datanode slaves.  Not needed if you specify these
+          manually.
+
+datanodeArchLogDir: Shortcut to assign the same WAL archive directory
+          to all the datanode slaves.  Not needed if you specify these
+          manually.
+
+primaryDataode: Specify name of the primary node.  This must be one of
+          the name in $datanodeNames.  If you don't want the primary
+          node, specify "N/A" or "none".
+
+
+datanodeNames: Array to specify coordinator names.
+
+datanodePorts: Array of the listening port number for each datanode
+          (master and slave use the same port).
+
+datanodePgHbaEntries: Array of CIDR addresses to be added to
+          pg_hba.conf.  Will create pg_hba.conf file entry with
+          $pgxcOwner user.
+
+datanodeMaterServers: Array of the host name where each datanode master runs.
+          Specify in the order of $coordNames above.
+
+datanodeMasterDirs: Array of datanode master work directory.
+
+datanodeMaxWalSender: shortcut to assign the same value to each member of
+          datanodeMaxWalSenders.  Not needed if you assign the value
+          manually.
+
+datanodeMaxWalSenders: Array of datanode max_wal_senders value.
+
+datanodeSlave: Specify "y" if you configure datanode slaves.  "n"
+          otherwise.
+
+datanodeSlaveServers: Array of the hostname where slave of each
+          datanode runs.  Specify "none" if you don't configure the
+          slave for specific coordinator.
+
+datanodeSlaveDirs:  Array of work directory for each datanode slave.
+
+datanodeArchLogDirs: Array of WAL archive log directory for each datanode
+          slave.
+
+datanodeExtraConfig:  If you would like to add extra configuration value
+          for all the datanodes, specify the file name containing
+          such lines for postgresql.conf.  Specify "none" otherwise.
+
+datanodeSpecificExtraConfig:  Array of the filename which contains extra
+          configuration values for each datanode.   Specify "none"
+          if you don't have such file.
+
+datanodeExtraPgHba: File name which contains entries for all the
+          datanodes' pg_hba.conf file.  Specify "none" if you don't
+          have such file.
+
+datanodeSpecificExtraPgHba: Array of file names which contain specific
+          extra pg_hba.conf entry for each datanode.  Specify "none"
+          if you don't have such file.
+
+5. pgxc_ctl commands
+
+Be sure that pgxc_ctl command is case-sensitive.
+
+clean all | component_name [master|slave|all]
+        Cleanup files and other resources for the specified
+        component.  You ommit [master|slave|all] option only when you
+        specifiy GTM proxy.  Otherwise, this opton is mandatory.   If
+        you specify "all", resources for all the component will be
+        cleaned-up.
+
+Createdb [- coordinator_name] createdb_arguments
+        Invokes createdb.  Without - cooridinator option, appropriate
+        coordinator will be chosen to connect.   With - coordinator
+        option, specified coordinator will be chosen to connect.
+
+Createuser [- coordinator_name] createuser_arguments
+        Invokes createuser.  Without - cooridinator option, appropriate
+        coordinator will be chosen to connect.   With - coordinator
+        option, specified coordinator will be chosen to connect.
+
+deploy [all | hostname]
+        Deploy postgres-xc bianries to specified host.  With hostname,
+        binaries will be deployed only to the specified one.
+        Hostname should be one of those appearing in the
+        configuration.
+
+Dropdb [- coordinator_name] databasename other_dropdb_arguments
+        Invokes dropdb.  Without - cooridinator option, appropriate
+        coordinator will be chosen to connect.   With - coordinator
+        option, specified coordinator will be chosen to connect.
+		Clean connection statement will also be issued to drop the
+        specified database.
+
+Dropuser [- coordinator_name] user_name other_dropuser_arguments
+        Invokes dropuser.  Without - cooridinator option, appropriate
+        coordinator will be chosen to connect.   With - coordinator
+        option, specified coordinator will be chosen to connect.
+
+exit
+        Terminate pgxc_ctl session.
+
+failover gtm | component_name
+        Failover the specified resource.  Please note that you cannot
+        failover GTM proxy.  If you need, you restart GTM proxy
+        individually using pgxc_ctl internal function.
+
+        Failover needs reconfiguration of the node of each
+        coordinator.  This will also be conducted by this command.
+
+        As a failover, old master will be removed from the
+        configuration.  New configuration will be written back to your
+        configuration file so you don't have to worry about the
+        configuration change when you stop and restart the cluster.
+
+        If you are testing postgres-xc and would like to cancel this
+        change to start from the scratch, edit the configuration file
+        and remove additional configuration.
+
+help
+        Help command.  Writes availabe command list.   To obtain
+        deatiled help for each command, type cmdname ?
+
+init [all]
+        Initialize all the components and configure them based upon
+        the above configuration variables.   You just type init and
+        wait for a while until pgxc_ctl conducts everything.   After
+        init is complete, all the components are up and you can run
+        any postgres-xc client programs.
+
+kill all | component_name [master|slave]
+        Kills process for specified component.  All kills all the
+        processes of postgres-xc.  This command also sweeps all the
+        outstanding local socke file.  Specify "all" may leave such
+        socket files though.
+
+monitor [all | component_name [master|slave|all] ]
+        Checks if specified component is running.    All checks
+        everything.
+
+prepare config
+		Create configuration file template.  Template file is created
+        as $HOME/pgxc/pgxcConf.  You should prepare $HOME/pgxc
+        directory in advance, or the command will fail.
+
+Psql [- coordinator] psql_arguments
+        Invokes psql.  Without - cooridinator option, appropriate
+        coordinator will be chosen to connect.   With - coordinator
+        option, specified coordinator will be chosen to connect.
+
+q
+        Terminate pgxc_ctl session.
+
+start gtm_proxy | all | gtm [master|slave|all] | 
+      coordinator [master|slave|all] | datanode [master|slave|all]
+        Start the specified components.  If you have more than one
+        gtm_proxy, coordinator or datanode, starts all of them.   To
+        start specific component, you need to use internal function.
+
+stop gtm_proxy | all | gtm [master|slave|all] | 
+     coordinator [master|slave|all] | datanode [master|slave|all]
+        Stop the specified components.  If you have more than one
+        gtm_proxy, coordinator or datanode, stops all of them.   To
+        stop specific component, you need to use internal function.
+
+Vacuumdb [- coordinator] vacuumdb_arguments
+        Invokes vacuumdb.  Without - cooridinator option, appropriate
+        coordinator will be chosen to connect.   With - coordinator
+        option, specified coordinator will be chosen to connect.
+
+xcshow
+        Shows various settings of pgxc_ctl.
+        config: prints postgres-xc configuration.  Shows what
+        components are installed in specic hosts.
+        verbose: prints verbose setting
+        log: prints log setting (under development)
+        backup: prints configuration file backup setting (under
+        development) 
+        gtm: prints gtm configuration
+        gtm_proxy: prints gtm_proxy configuration
+        coordinator: prints coordinator configuration
+        datanode: prints datanode configuration
+        component_name: show each component's configuration
+
+xcset
+        Sets up pgxc_ctl settings.
+        verbose [y|n|on|off]: sets up verbose option
+
+
+?
+        Help command.  See "help"
+
+basl_command
+        You can issue any bash command too.
+
+internal_func args...
+        Invokes internal function of pgxc_ctl.  You must be very
+        familiar with what each internal pgxc_ctl function does.
+
+6. Remarks
+
+Pgxc_ctl is still under development and has much room to extend unless
+the size is too big to run as bash script.  Any comments, requirements
+and bug reports are welcome.  Please write to
+koichi.clarinet@gmail.com.

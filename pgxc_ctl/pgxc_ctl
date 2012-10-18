@@ -1261,7 +1261,7 @@ function print_config
 	echo "=== End of configuration ==="
 }
 
-# $1: nodename, $2: master/slave/all/-/none
+# $1: nodename, $2: [master/slave/all]
 function pgxc_ctl_monitor
 {
 	local fn=monitor
@@ -4751,7 +4751,7 @@ while [ $moretodo == y ]; do
 					shift
 				fi;
 				continue;;
-			-i ) # input_file
+			-f ) # input_file
 				shift;
 				if [ "$1" == "" ]; then
 					echo Epecify input file
@@ -4826,10 +4826,10 @@ while [ 1 ]; do
 	if [ "$cmdname" == "" ];  then
 		continue
 	fi
-	if [ "$cmdname" == "end" ] || [ "$cmdname" == "q" ]; then
+	if [ "$cmdname" == "exit" ] || [ "$cmdname" == "q" ]; then
 		break
 	fi
-	if [ "$cmdname" == "?" ]; then
+	if [ "$cmdname" == "?" ] || [ "$cmdname" == "help" ]; then
 		help_command
 		continue
 	fi
@@ -4852,7 +4852,7 @@ while [ 1 ]; do
 		continue
 	fi
 
-	# Stop --- all | gtp [master|slave|all] | gtm_proxy | coordiantor [master|slave|all] | datanode [master|slave|all] | nodename [master|slave|all]
+	# Stop --- all | gtm [master|slave|all] | gtm_proxy | coordiantor [master|slave|all] | datanode [master|slave|all] | nodename [master|slave|all]
 	if [ "$cmdname" == "stop" ]; then
 		pgxc_stop_something $p1 $p2 $p3 $p4 $cmdparam
 		continue
