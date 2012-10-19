@@ -20,7 +20,6 @@
 # All such addition will be tagged with proper comment and date/time info.   If you'd like to
 # cancel such changes, you can remove or comment-out such additional lines.
 #
-configFile=$HOME/pgxc/pgxcConfig
 #
 #==========================================================================================================================
 #
@@ -45,6 +44,9 @@ configFile=$HOME/pgxc/pgxcConfig
 # configured at first time only.
 #===============================================================
 #
+#---- Configuration File
+pgxcInstallDir=$HOME/pgxc
+configFile=$pgxcInstallDir/pgxcConf
 #---- OVERALL -----------------------------------------------------------------------------------------------------------
 #
 pgxcOwner=koichi		# owner of the Postgres-XC database cluster.  Here, we use this
@@ -52,13 +54,12 @@ pgxcOwner=koichi		# owner of the Postgres-XC database cluster.  Here, we use thi
 						# the super user of each coordinator and datanode.
 pgxcUser=$pgxcOwner		# OS user of Postgres-XC owner
 
-pgxcInstallDir=$HOME/pgxc
 
 tmpDir=/tmp					# temporary dir used in XC servers
 localTmpDir=$tmpDir			# temporary dir used here locally
 
 logOpt=y						# If you want log
-logDir=$HOME/pgxc/pgxc_ctl_log	# Directory to write pgxc_ctl logs
+logDir=$pgxcInstallDir/pgxc_ctl_log	# Directory to write pgxc_ctl logs
 
 configBackup=y					# If you want config file backup
 configBackupHost=pgxc-linker	# host to backup config file
@@ -256,8 +257,6 @@ function create_config_file_template
 {
 	cat > $configFile <<EOF
 #!/bin/bash
-configFile=$configFile
-#
 #==========================================================================================================================
 #
 # Configuration Section
@@ -281,6 +280,11 @@ configFile=$configFile
 # configured at first time only.
 #===============================================================
 #
+#---- Configuration File
+#
+# If you're using non-default config file, you should specify config file each time you invoke pgxc_ctl
+pgxcInstallDir=$HOME/pgxc
+configFile=$pgxcInstallDir/pgxcConf
 #---- OVERALL -----------------------------------------------------------------------------------------------------------
 #
 pgxcOwner=koichi		# owner of the Postgres-XC database cluster.  Here, we use this
@@ -288,13 +292,12 @@ pgxcOwner=koichi		# owner of the Postgres-XC database cluster.  Here, we use thi
 						# the super user of each coordinator and datanode.
 pgxcUser=$pgxcOwner		# OS user of Postgres-XC owner
 
-pgxcInstallDir=$HOME/pgxc
 
 tmpDir=/tmp					# temporary dir used in XC servers
 localTmpDir=$tmpDir			# temporary dir used here locally
 
 logOpt=y						# If you want log
-logDir=$HOME/pgxc/pgxc_ctl_log	# Directory to write pgxc_ctl logs
+logDir=$pgxcInstallDir/pgxc_ctl_log	# Directory to write pgxc_ctl logs
 
 configBackup=y					# If you want config file backup
 configBackupHost=pgxc-linker	# host to backup config file
@@ -491,14 +494,35 @@ logfile=none;
 function log_echo
 {
 	if [ $logOpt == "y" ]; then
-		echo `date +%y%m%d_%H%M_%S` $* >> logfile
+		echo $* >> $logfile
+	fi
+}
+
+function log_echo_with_date
+{
+	if [ $logOpt == "y" ]; then
+		echo `date +%y%m%d,%H:%M:%S` $* >> $logfile
 	fi
 }
 
 function set_log_file
 {
 	mkdir -p $logDir
-	logfile=$logDir/pgxc_ctl_$datetime.log
+	if [ -d $logDir ]; then
+		logfile=$logDir/pgxc_ctl_$datetime.log
+	else
+		logOpt=n
+		eecho Log directory $logDir could not found or is not a directory.
+	fi
+}
+
+function change_log_file
+{
+	if [ $logOpt == y ]; then
+		logfile=$logDir/$1
+	else
+		eecho Log disabled.   Cannot change log file.
+	fi
 }
 
 function vecho
@@ -2080,16 +2104,35 @@ function print_stdout
 	file=$1
 	shift
 	if [ $verbose == y ]; then
-		if [ $interactive != y ]; then
-			ssh $pgxcUser@$host cat $file
+		if [ $ interactive != y ]; then
+			if [ $host != localhost ]; then
+				ssh $pgxcUser@$host cat $file
+			else
+				cat $file >> $logfile
+			fi
 		else
 			echo -n $*
 			if [ `readyesno n` == y ]; then
-				ssh $pgxcUser@$host cat $file
+				if [ $host != localhost ]; then
+					ssh $pgxcUser@$host cat $file
+				else
+					cat $file
+				fi
 			fi
 		fi
 	fi
-	ssh $pgxcUser@$host rm -f $file
+	if [ $logOpt == y ]; then
+		if [ $host != localhost ]; then 
+			(ssh $pgxcUser@$host cat $file) >> $logfile
+		else
+			cat $file >> $logfile
+		fi
+	fi
+	if [ $host != localhost ]; then
+		ssh $pgxcUser@$host rm -f $file
+	else
+		rm -f $file
+	fi
 }
 
 # Print without asking, if $verbose == y
@@ -2105,9 +2148,32 @@ function do_stdout
 	file=$1
 	shift
 	if [ $verbose == y ]; then
-		ssh $pgxcUser@$host cat $file
+		if [ $host != localhost ]; then
+			ssh $pgxcUser@$host cat $file
+		else
+			cat $file
+		fi
+		if [ $logOpt == y ]; then
+			if [ $host != localhost ]; then
+				(ssh $pgxcUser@$host cat $file) >> $logfile
+			else
+				cat $file >> $logfile
+			fi
+		fi
 	fi
-	ssh $pgxcUser@$host rm -f $file
+	if [ $host != localhost ]; then
+		ssh $pgxcUser@$host rm -f $file
+	else
+		rm -f $file
+	fi
+}
+
+# Write the file to the log if log is enabled.  $1: file to write
+function fileWriteToLog
+{
+	if [ $logOpt == y ]; then
+		cat $1 >> $logfile
+	fi
 }
 
 function print_initgtm_out
@@ -2144,6 +2210,7 @@ function print_gtm_ctl_out
 # If you don't specify "no" additional ones, you can specify "none".
 function pgxc_configure_gtm_master
 {
+	log_echo pgxc_configure_gtm_master"("$*")"
     vecho ================================================================
     vecho Configure GTM Master
 
@@ -2167,7 +2234,7 @@ EOF
 	if [ $# -ge 4 ]; then
 		gtmExtraConfig=$4
 		vecho -n "                       "ExtraConfig: "'"$gtmExtraConfig"'"
-	cat >> $configFile <<EOF
+		cat >> $configFile <<EOF
 gtmExtraConfig=$gtmExtraConfig
 EOF
 		if [ $# -eq 5 ]; then
@@ -2189,6 +2256,7 @@ function pgxc_init_gtm_master
 {
 	local yesno
 
+	log_echo pgxc_init_gtm_master"("$*")"
     vecho ================================================================
     vecho GTM Master initialize
 
@@ -2198,17 +2266,21 @@ function pgxc_init_gtm_master
     doit ssh $pgxcUser@$gtmMasterServer "initgtm -Z gtm -D $gtmMasterDir > $tmpDir/initgtm.out 2>&1"
 	print_initgtm_out $gtmMasterServer $tmpDir/initgtm.out
     vecho Configuring $gtmMasterServer:$gtmMasterDir/gtm.conf
+	vecho     ssh $pgxcUser@$gtmMasterServer '"'cat '>>'  $gtmMasterDir/gtm.conf '<<EOF'
     ssh $pgxcUser@$gtmMasterServer "cat >>  $gtmMasterDir/gtm.conf" <<EOF
 #===========================================
 # Added at initialization. $datetime
 listen_addresses = '*'
 EOF
 	if [ $gtmExtraConfig != none ]; then
+		vecho ssh $pgxcUser@$gtmMasterServer '"'cat '>>' $gtmMasterDir/gtm.conf'"' '<' $gtmExtraConfig
 		ssh $pgxcUser@$gtmMasterServer "cat >> $gtmMasterDir/gtm.conf" < $gtmExtraConfig
 	fi
 	if [ $gtmMasterSpecificExtraConfig != none ]; then
+		vecho ssh $pgxcUser@$gtmMasterServer '"'cat '>>' $gtmMasterDir/gtm.conf'"' '<' $gtmSpecificExtraConfig
 		ssh $pgxcUser@$gtmMasterServer "cat >> $gtmMasterDir/gtm.conf" < $gtmSpecificExtraConfig
 	fi
+    vecho ssh $pgxcUser@$gtmMasterServer '"'cat '>>'  $gtmMasterDir/gtm.conf'"'
     ssh $pgxcUser@$gtmMasterServer "cat >>  $gtmMasterDir/gtm.conf" <<EOF
 port = $gtmMasterPort
 nodename = '$gtmName'
@@ -2220,9 +2292,11 @@ EOF
 	# many XID's involved.  This is a dirty hack and should be corrected by running initdb with
 	# gtm, or gtm can correct what GXID to start with from all the nodes.
 	vecho Initializing starting GXID value...
+	vecho 	'('ssh $pgxcUser@$gtmMasterServer gtm -x 1000 -D $gtmMasterDir '&)'
 	(ssh $pgxcUser@$gtmMasterServer gtm -x 1000 -D $gtmMasterDir &)
 	sleep 1
-	ssh $pgxcUser@$gtmMasterServer gtm_ctl stop -Z gtm -D $gtmMasterDir > /dev/null 2>&1
+	vecho ssh $pgxcUser@$gtmMasterServer '"'gtm_ctl stop -Z gtm -D $gtmMasterDir '>' /dev/null '2>&1"'
+	ssh $pgxcUser@$gtmMasterServer "gtm_ctl stop -Z gtm -D $gtmMasterDir > /dev/null 2>&1"
 }
 
 # Configure gtm_slave.   The arguments are host name, port and directory.
@@ -2238,6 +2312,7 @@ EOF
 
 function pgxc_init_gtm_slave
 {
+	log_echo pgxc_init_gtm_slave'('$*')'
     vecho ================================================================
     vecho $progname:$0 GTM Slave initialize
 
@@ -2245,21 +2320,26 @@ function pgxc_init_gtm_slave
 		echo $progname:$0 ERROR: GTM Slave is not configured.
 		return 1
 	fi
-    doit ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcOwner -9 gtm > /dev/null 2>&1"
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'killall -u $pgxcOwner -9 gtm '>' /dev/null '2>&1"'
+    ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcOwner -9 gtm > /dev/null 2>&1"
     doit ssh $pgxcUser@$gtmSlaveServer rm -rf $gtmSlaveDir
     doit ssh $pgxcUser@$gtmSlaveServer mkdir -p $gtmSlaveDir
-    doit ssh $pgxcUser@$gtmSlaveServer "initgtm -Z gtm -D $gtmSlaveDir > $tmpDir/initgtm.out 2>&1"
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'initgtm -Z gtm -D $gtmSlaveDir '>' $tmpDir/initgtm.out '2>&1"'
+    ssh $pgxcUser@$gtmSlaveServer "initgtm -Z gtm -D $gtmSlaveDir > $tmpDir/initgtm.out 2>&1"
 	print_initgtm_out $gtmSlaveServer $tmpDir/initgtm.out
-    vecho Configuring $gtmSlaveServer:$gtmSlaveDir/gtm.conf
+    vecho $pgxcUser@$gtmSlaveServer '"'cat '>>'  $gtmSlaveDir/gtm.conf'"'
     ssh $pgxcUser@$gtmSlaveServer "cat >>  $gtmSlaveDir/gtm.conf"  <<EOF
 listen_addresses = '*'
 EOF
 	if [ $gtmExtraConfig != none ]; then
+		vecho ssh $pgxcUser@$gtmSlaveServer '"'cat '>>' $gtmSlaveDir/gtm.conf'"' '<' $gtmExtraConfig
 		ssh $pgxcUser@$gtmSlaveServer "cat >> $gtmSlaveDir/gtm.conf" < $gtmExtraConfig
 	fi
 	if [ $gtmSlaveSpecificExtraConfig != none ]; then
+		vecho ssh $pgxcUser@$gtmSlaveServer '"'cat '>>' $gtmSlaveDir/gtm.conf'"' '<' $gtmSlaveSpecificExtraConfig
 		ssh $pgxcUser@$gtmSlaveServer "cat >> $gtmSlaveDir/gtm.conf" < $gtmSlaveSpecificExtraConfig
 	fi
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'cat '>>'  $gtmSlaveDir/gtm.conf'"'
     ssh $pgxcUser@$gtmSlaveServer "cat >>  $gtmSlaveDir/gtm.conf" <<EOF
 port = $gtmSlavePort
 nodename = '$gtmName'
@@ -2271,38 +2351,46 @@ EOF
 
 function pgxc_start_gtm_master
 {
+	log_echo pgxc_start_gtm_master'('$*')'
 	vecho ================================================================
 	vecho Starting GTM Master
 
-	doit ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcOwner -9 gtm > /dev/null 2>&1"
+	vecho ssh $pgxcUser@$gtmMasterServer '"'killall -u $pgxcOwner -9 gtm '>' /dev/null '2>&1"'
+	ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcOwner -9 gtm > /dev/null 2>&1"
 	doit ssh $pgxcUser@$gtmMasterServer "rm -f $gtmMasterDir/register.node"
-	doit ssh $pgxcUser@$gtmMasterServer "gtm_ctl start -Z gtm -D $gtmMasterDir > $tmpDir/gtm.out"
+	vecho ssh $pgxcUser@$gtmMasterServer '"'gtm_ctl start -Z gtm -D $gtmMasterDir '>' $tmpDir/gtm.out'"'
+	ssh $pgxcUser@$gtmMasterServer "gtm_ctl start -Z gtm -D $gtmMasterDir > $tmpDir/gtm.out"
 	do_stdout $gtmMasterServer $tmpDir/gtm.out
 }
 
 function pgxc_start_gtm_slave
 {
+	log_echo pgxc_start_gtm_slave'('$*')'
 	vecho ================================================================
 	vecho $progname:$0 Starting GTM Slave
 
 	if [ $gtmSlaveServer == none ]; then
-		echo $progname:$0 ERROR: GTM slave is not configured.
+		eecho ERROR: GTM slave is not configured.
 		return 1
 	fi
-	doit ssh $pgxcUser@$gtmMasterServer "gtm_ctl status -Z gtm -D $gtmMasterDir > /dev/null 2> /dev/null"
+	vecho ssh $pgxcUser@$gtmMasterServer '"'gtm_ctl status -Z gtm -D $gtmMasterDir '>' /dev/null '2>&1"'
+	ssh $pgxcUser@$gtmMasterServer "gtm_ctl status -Z gtm -D $gtmMasterDir > /dev/null 2>&1"
 	if [ $? -ne 0 ]; then
 		echo ERROR: GTM Master is not running. Cannot start the slave.
 		return 1
 	fi
-	doit ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcOwner -9 gtm >/dev/null 2>&1"
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'killall -u $pgxcOwner -9 gtm '>' /dev/null '2>&1"'
+	ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcOwner -9 gtm >/dev/null 2>&1"
 	doit ssh $pgxcUser@$gtmSlaveServer "rm -f $gtmSlaveDir/register.node"
-	doit ssh $pgxcUser@$gtmSlaveServer "gtm_ctl start -Z gtm -D $gtmSlaveDir > $tmpDir/gtm.out"
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'gtm_ctl start -Z gtm -D $gtmSlaveDir '>' $tmpDir/gtm.out'"'
+	ssh $pgxcUser@$gtmSlaveServer "gtm_ctl start -Z gtm -D $gtmSlaveDir > $tmpDir/gtm.out"
 	do_stdout $gtmSlaveServer $tmpDir/gtm.out
 }
 
 
 function pgxc_stop_gtm_master
 {
+	log_echo pgxc_stop_gtm_master'('$*')'
 	vecho ================================================================
 	vecho Stopping GTM Master
 	doit ssh $pgxcUser@$gtmMasterServer gtm_ctl stop -Z gtm -D $gtmMasterDir
@@ -2310,56 +2398,65 @@ function pgxc_stop_gtm_master
 
 function pgxc_stop_gtm_slave
 {
-	if [ $gtmSlaveServer == none ] || [ $gtmSlaveServer == N/A ]; then
-		echo $progname:$0 ERROR: GTM slave is not configured.
-		return 1
-	fi
+	log_echo pgxc_stop_gtm_slave'('$*')'
 	vecho ================================================================
 	vecho Stopping GTM Slave
+	if [ $gtmSlaveServer == none ] || [ $gtmSlaveServer == N/A ]; then
+		eecho ERROR: GTM slave is not configured.
+		return 1
+	fi
 	doit ssh $pgxcUser@$gtmSlaveServer gtm_ctl stop -Z gtm -D $gtmSlaveDir
 }
 
 function pgxc_kill_gtm_master
 {
+	log_echo pgxc_kill_gtm_master'('$*')'
 	vecho ================================================================
 	vecho Stopping GTM Master
-	doit ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcUser -9 gtm >/dev/null 2>&1"
+	vecho ssh $pgxcUser@$gtmMasterServer '"'killall -u $pgxcUser -9 gtm '>'/dev/null '2>&1"'
+	ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcUser -9 gtm >/dev/null 2>&1"
 	pgxc_clean_socket $gtmMasterServer $gtmMasterPort
 }
 
 function pgxc_kill_gtm_slave
 {
-	if [ $gtmSlaveServer == none ] || [ $gtmSlaveServer == N/A ]; then
-		echo $progname:$0 ERROR: GTM slave is not configured.
-		return 1
-	fi
+	log_echo pgxc_kill_gtm_slave'('$*')'
 	vecho ================================================================
 	vecho Stopping GTM Slave
-	doit ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcUser -9 gtm >/dev/null 2&>1"
+	if [ $gtmSlaveServer == none ] || [ $gtmSlaveServer == N/A ]; then
+		eecho ERROR: GTM slave is not configured.
+		return 1
+	fi
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'killall -u $pgxcUser -9 gtm '>'/dev/null '2&>1"'
+	ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcUser -9 gtm >/dev/null 2&>1"
 	pgxc_clean_socket $gtmSlaveServer $gtmSlavePort
 }
 
 function pgxc_failover_gtm
 {
+	log_echo pgxc_failover_gtm
 	# Reconnect should be done in separate action.
 	vecho ================================================================
 	vecho GTM Failover
 
 	if [ $gtmSlaveServer == none ]; then
-		echo ERROR: pgxc_failover_gtm: GTM slave is not available.
+		eecho ERROR: pgxc_failover_gtm: GTM slave is not available.
 		return 1
 	fi
-	doit ssh "$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir > /dev/null 2> /dev/null"
+	vecho ssh '"'$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir '>' /dev/null '2&>1"'
+	ssh "$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir > /dev/null 2&>1"
 	if [ $? -ne 0 ]; then
-		echo ERROR: GTM slave is not running.
+		eecho ERROR: GTM slave is not running.
 		return 1
 	fi
 	# STONITH GTM Master
 	# Please note that master and slave should run on different server.
-	doit ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcOwner -9 gtm >/dev/null 2>&1"
+	vecho $pgxcUser@$gtmMasterServer '"'killall -u $pgxcOwner -9 gtm '>'/dev/null '2>&1"'
+	ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcOwner -9 gtm >/dev/null 2>&1"
 	doit ssh $pgxcUser@$gtmSlaveServer gtm_ctl promote -Z gtm -D $gtmSlaveDir
 	# Update GTM configuration file as the master
 	vecho Reconfigure GTM as Master
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'cat '>>' $gtmSlaveDir/gtm.conf'"'
 	ssh $pgxcUser@$gtmSlaveServer "cat >> $gtmSlaveDir/gtm.conf" <<EOF
 #===================================================
 # Updated due to GTM failover
@@ -2369,6 +2466,7 @@ startup = ACT
 EOF
 	# Update configuration
 	vecho Reconfiguring whole Postgres-XC cluster
+	vecho cat '>>' $configFile
 	cat >> $configFile <<EOF
 #===================================================
 # pgxc configuration file updated due to GTM failover
@@ -2399,26 +2497,31 @@ EOF
 function pgxc_init_gtm_proxy
 {
 	# First argument is the nodename
+	log_echo pgxc_init_gtm_proxy'('$*')'
     vecho ================================================================
     vecho Initialize GTM Proxy $1
 
 	local i
 
 	if [ $# -ne 1 ]; then
-		iecho Specify gtm_proxy name
+		eecho ERROR: Specify gtm_proxy name
 		return 1
 	fi
 	for ((i=0; i< ${#gtmProxyNames[@]}; i++)); do
 		if [ $1 == ${gtmProxyNames[$i]} ] && [ ${gtmProxyServers[$i]} != none ] && [ ${gtmProxyServers[$i]} != N/A ]; then
-			doit ssh $pgxcUser@${gtmProxyServers[$i]} "killall -u $pgxcOwner -9 gtm_proxy >/dev/null 2>&1"
+			vecho ssh $pgxcUser@${gtmProxyServers[$i]} '"'killall -u $pgxcOwner -9 gtm_proxy '>'/dev/null '2>&1"'
+			ssh $pgxcUser@${gtmProxyServers[$i]} "killall -u $pgxcOwner -9 gtm_proxy >/dev/null 2>&1"
 			doit ssh $pgxcUser@${gtmProxyServers[$i]} rm -rf ${gtmProxyDirs[$i]}
 			doit ssh $pgxcUser@${gtmProxyServers[$i]} mkdir -p ${gtmProxyDirs[$i]}
-			doit ssh "$pgxcUser@${gtmProxyServers[$i]} initgtm -Z gtm_proxy -D ${gtmProxyDirs[$i]} > $tmpDir/initgtm.out 2>&1"
+			vecho ssh $pgxcUser@${gtmProxyServers[$i]} '"'initgtm -Z gtm_proxy -D ${gtmProxyDirs[$i]} '>' $tmpDir/initgtm.out '2>&1"'
+			ssh $pgxcUser@${gtmProxyServers[$i]} "initgtm -Z gtm_proxy -D ${gtmProxyDirs[$i]} > $tmpDir/initgtm.out 2>&1"
 			print_initgtm_out ${gtmProxyServers[$i]} $localTmpDir/initgtm.out
 			vecho Configuring ${gtmProxyServers[$i]}:${gtmProxyDirs[$i]}/gtm_proxy.conf
 			if [ $gtmPxyExtraConfig != none ] && [ $gtmPxyExtrConfig != N/A ]; then
+				vecho ssh $pgxcUser@${gtmProxyServers[$i]} '"'cat '>>' ${gtmProxyDirs[$i]}/gtm_proxy.conf'"' '<' $gtmPxyExtraConfig
 				ssh $pgxcUser@${gtmProxyServers[$i]} "cat >> ${gtmProxyDirs[$i]}/gtm_proxy.conf" < $gtmPxyExtraConfig
 			fi
+			vecho ssh $pgxcUser@${gtmProxyServers[$i]} '"'cat '>>' ${gtmProxyDirs[$i]}/gtm_proxy.conf'"'
 			ssh $pgxcUser@${gtmProxyServers[$i]} "cat >> ${gtmProxyDirs[$i]}/gtm_proxy.conf" <<EOF
 nodename = '${gtmProxyNames[$i]}'
 listen_addresses = '*'
@@ -2431,14 +2534,17 @@ EOF
 			return
 		fi
 	done
-	echo ERROR: specified GTM proxy is not configured, $1
+	eecho ERROR: specified GTM proxy is not configured, $1
 	return 1
 }
 
 function pgxc_init_gtm_proxy_all
 {
 	local i
+
+	log_echo pgxc_init_gtm_proxy_all'('$*')'
 	if [ $gtmProxy != y ]; then
+		eecho ERROR: gtm_proxy is not configured
 		return 1
 	fi
 	for((i=0;i<${#gtmProxyNames[@]};i++)); do
@@ -2451,42 +2557,46 @@ function pgxc_init_gtm_proxy_all
 function pgxc_start_gtm_proxy
 {
 	# First argument is the nodename
+	log_echo pgxc_start_gtm_proxy'('$*')'
     vecho ================================================================
     vecho Start GTM Proxy $1
 
 	if [ $# -ne 1 ]; then
-		iecho Specify GTM proxy name
+		eecho Error: specify GTM proxy name
 		return 1
 	fi
 	local i
 	for ((i=0; i< ${#gtmProxyNames[@]}; i++)); do
 		if [ $1 == ${gtmProxyNames[$i]} ]; then
-			doit ssh $pgxcUser@${gtmProxyServers[$i]} "killall -u $pgxcOwner -9 gtm_proxy >/dev/null 2>&1"
-			doit ssh $pgxcUser@${gtmProxyServers[$i]} "gtm_ctl start -Z gtm_proxy -D ${gtmProxyDirs[$i]} > $tmpDir/gtm_proxy.out 2>&1"
+			vecho ssh $pgxcUser@${gtmProxyServers[$i]} '"'killall -u $pgxcOwner -9 gtm_proxy '>'/dev/null '2>&1"'
+			ssh $pgxcUser@${gtmProxyServers[$i]} "killall -u $pgxcOwner -9 gtm_proxy >/dev/null 2>&1"
+			vecho ssh $pgxcUser@${gtmProxyServers[$i]} '"'gtm_ctl start -Z gtm_proxy -D ${gtmProxyDirs[$i]} '>' $tmpDir/gtm_proxy.out '2>&1"'
+			ssh $pgxcUser@${gtmProxyServers[$i]} "gtm_ctl start -Z gtm_proxy -D ${gtmProxyDirs[$i]} > $tmpDir/gtm_proxy.out 2>&1"
 			do_stdout ${gtmProxyServers[$i]} $tmpDir/gtm_proxy.out
 			return
 		fi
 	done
-	echo ERROR: specified GTM proxy does not exist, $1
+	eecho ERROR: specified GTM proxy does not exist, $1
 	return 1
 }
 
 function pgxc_start_gtm_proxy_all
 {
+	log_echo pgxc_startgtm_proxy_all'('$*')'
 	local i
     vecho ================================================================
     vecho Starting all the GTM proxies
 	if [ $gtmProxy != y ]; then
-		iecho GTM proxy is not configured.
+		eecho ERROR: GTM proxy is not configured.
 		return 1
 	fi
 	for((i=0;i<${#gtmProxyNames[@]};i++)); do
 		if [ ${gtmProxyServers[$i]} != none ] && [ ${gtmProxyServers[$i]} != N/A ]; then
 			pgxc_monitor -Z gtm -p ${gtmProxyPorts[$i]} -h ${gtmProxyServers[$i]}
 			if [ $? -eq 0 ]; then
-				vecho gtm_proxy"("${gtpmProxyNames[$i]}")" is already running.
+				eecho gtm_proxy"("${gtpmProxyNames[$i]}")" is already running.
 			else
-				pgxc_start_gtm_proxy ${gtmProxyNames[$i]}
+				doit pgxc_start_gtm_proxy ${gtmProxyNames[$i]}
 			fi
 		fi
 	done
@@ -2495,6 +2605,7 @@ function pgxc_start_gtm_proxy_all
 function pgxc_stop_gtm_proxy
 {
 	# First argument is the nodename
+	log_echo pgxc_stop_gtm_proxy'('$*')'
     vecho ================================================================
     vecho Stop GTM Proxy $1
 
@@ -2509,25 +2620,26 @@ function pgxc_stop_gtm_proxy
 			return
 		fi
 	done
-	echo ERROR: specified GTM proxy does not exist, $1
+	eecho ERROR: specified GTM proxy does not exist, $1
 	return 1
 }
 
 function pgxc_stop_gtm_proxy_all
 {
+	log_echo pgxc_stop_gtm_proxy_all'('$*')'
     vecho ================================================================
     vecho Stop all the GTM Proxies
 
 	local i
 	if [ $gtmProxy != y ]; then
-		iecho GTM Proxy is not configured
+		eecho Error: GTM Proxy is not configured
 		return 1
 	fi
 	for((i=0;i<${#gtmProxyNames[@]};i++)); do
 		if [ ${gtmProxyServers[$i]} == none ] || [ ${gtmProxyServers[$i]} == N/A ]; then
 			continue
 		fi
-		pgxc_stop_gtm_proxy ${gtmProxyNames[$i]}
+		doit pgxc_stop_gtm_proxy ${gtmProxyNames[$i]}
 	done
 }
 
@@ -2536,25 +2648,28 @@ function pgxc_stop_gtm_proxy_all
 function pgxc_kill_gtm_proxy
 {
 	# First argument is the nodename
+	log_echo pgxc_kill_gtm_proxy'('$*')'
     vecho ================================================================
     vecho Kill GTM Proxy $1
 
 	if [ $# -ne 1 ]; then
-		iecho Specify GTM proxy name
+		eecho ERROR: specify GTM proxy name
 		return 1
 	fi
 	local i
 	for ((i=0; i< ${#gtmProxyNames[@]}; i++)); do
 		if [ $1 == ${gtmProxyNames[$i]} ]; then
-			doit ssh $pgxcUser@${gtmProxyServers[$i]} "killall -u $pgxcOwner -9 gtm_proxy >/dev/null 2>&1"
-			pgxc_clean_socket ${gtmProxyServers[$i]} ${gtmProxyPorts[$i]}
+			vecho ssh $pgxcUser@${gtmProxyServers[$i]} '"'killall -u $pgxcOwner -9 gtm_proxy '>'/dev/null '2>&1"'
+			ssh $pgxcUser@${gtmProxyServers[$i]} "killall -u $pgxcOwner -9 gtm_proxy >/dev/null 2>&1"
+			doit pgxc_clean_socket ${gtmProxyServers[$i]} ${gtmProxyPorts[$i]}
 			return
 		fi
 	done
-	echo ERROR: specified GTM proxy does not exist, $1
+	eecho ERROR: specified GTM proxy does not exist, $1
 	return 1
 }
 
+#----------------ここまで: ログ出力拡張: Oct 19, 2012 --------------------------
 function pgxc_kill_gtm_proxy_all
 {
     vecho ================================================================
@@ -4784,19 +4899,24 @@ while [ $moretodo == y ]; do
 	fi
 done
 
-
 # Read configuration file --> Should be activated only when debug option is off
 if [ -f $configFile ]; then
 	source $configFile
 fi
 # Log option can be overriden by command-line option
-if [ $cmd_with_log != null ]; then
+if [ "$cmd_with_log" != "null" ]; then
 	cmdOpt=$cmd_with_log
 fi
+if [ "$logOpt" == "y" ]; then
+	set_log_file
+fi
+
+log_echo '===== Start PGXC_CTL =========='
+
+# Check configuration -- Mayh need more detailed check.
 
 # Check if slaves are configured and makeup each server to N/A if needed
 handle_no_slaves
-
 # Construct the server list
 makeServerList
 
@@ -4822,6 +4942,7 @@ while [ 1 ]; do
 		echo -n "$xc_prompt"
 		read cmdname p1 p2 p3 p4 cmdparam
 	fi
+	log_echo_with_date $cmdname $p1 $p2 $p3 $p4 $cmdparam
 
 	if [ "$cmdname" == "" ];  then
 		continue
@@ -5080,6 +5201,12 @@ while [ 1 ]; do
 	if [ "$cmdname" == "xcset" ]; then
 		if [ "$p1" == "verbose" ]; then
 			set_verbose $p2
+		elif [ "$p1" == "log" ]; then
+			if [ "$p2" == "" ]; then
+				oeecho Specify log file name.
+			else
+				change_log_file $p2
+			fi
 		elif [ "$p1" == "interactive" ]; then
 			set_interactive $p2
 		else

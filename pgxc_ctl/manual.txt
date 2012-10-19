@@ -505,6 +505,7 @@ xcshow
 xcset
         Sets up pgxc_ctl settings.
         verbose [y|n|on|off]: sets up verbose option
+		log logfile: change log file
 
 
 ?
