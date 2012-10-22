@@ -511,7 +511,7 @@ xcset
 ?
         Help command.  See "help"
 
-basl_command
+bash_command
         You can issue any bash command too.
 
 internal_func args...
