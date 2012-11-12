@@ -63,6 +63,7 @@ logDir=$pgxcInstallDir/pgxc_ctl_log	# Directory to write pgxc_ctl logs
 
 configBackup=y					# If you want config file backup
 configBackupHost=pgxc-linker	# host to backup config file
+configBackupDir=$pgxcInstallDir
 configBackupFile=$configFile	# Backup file name
 
 #---- GTM --------------------------------------------------------------------------------------------------------------
@@ -193,7 +194,7 @@ datanodeArchLogDir=$HOME/pgxc/nodes/datanode_archlog
 #primaryDatanode=datanode1				# Primary Node.
 # At present, xc has a priblem to issue ALTER NODE against the primay node.  Until it is fixed, the test will be done
 # without this feature.
-primaryDatanode=N/A						# Primary Node.
+primaryDatanode=datanode1				# Primary Node.
 datanodeNames=(datanode1 datanode2 datanode3 datanode4)
 datanodePorts=(20008 20009 20008 20009)	# Master and slave use the same port!
 datanodePgHbaEntries=(192.168.1.0/24)	# Assumes that all the coordinator (master/slave) accepts
@@ -677,6 +678,19 @@ function readyesno
 			echo $1;;
 	esac
 }
+
+#
+# Backups configuration file, especially done when configuraiton file is updated due to
+# failover.
+#
+function pgxc_backup_config_file
+{
+	if [ "$configBackup" == "y" ]; then
+		log_echo Backing up configuration file $configFile to $configBackupHost:$configBackupFile
+		doit ssh $pgxcUser@$configBackupHost mkdir -p $configBackupDir
+		doit scp $configFile $pgxcUser@$configBackupHost:$configBackupFile
+	fi
+}
 datetime=`date +%y%m%d_%H%M`
 immediate="-m fast"			# option for pg_ctl stop.
 
@@ -728,6 +742,20 @@ function get_postmaster_pid
 	# Checked for CentOS (RHEL), Ubuntu 10.4, ubuntu 12.4.
 	# This assumes that grep extracts at most one line.
 	ssh $pgxcUser@$1 ps -f -C postgres | grep $2 | extract_pid
+}
+
+#
+# Get next xid of the node.  Used to determine what xid gtm should start with.
+#
+# $1: host
+# $2: dir
+# Result will be set to the variable nextXid, which is declared as number
+#
+declare -i nextXid
+
+function get_nextXid
+{
+	nextXid=`ssh $pgxcUser@$1 pg_controldata $2 | grep NextXid | sed -e "s%.*/%%"`
 }
 
 function kill_all_child_parent
@@ -1572,7 +1600,7 @@ function monitor_components
 	# GTM slave
 	if [ $gtmSlave == y ]; then
 		if [ $gtmSlaveServer == none ] || [ $gtmSlaveServer == N/A ]; then
-			echo -n GTM slave "("$gtmName")": not configured.
+			echo GTM slave "("$gtmName")": not configured.
 		else
 			pgxc_monitor -Z gtm -p $gtmSlavePort -h $gtmSlaveServer
 			if [ $? -eq 0 ]; then
@@ -1793,7 +1821,7 @@ function pgxc_clean_dir
 
 function pgxc_clean_socket
 {
-	doit ssh $pgxcUser@$1 'rm -f /tmp/.s.*$2*'
+	doit ssh $pgxcUser@$1 rm -f /tmp/.s.'*'$2'*'
 }
 
 # First argument is the nodename.  The second is "master", "slave" or "all".
@@ -2316,13 +2344,14 @@ EOF
 			cat >> $configFile <<EOF
 gtmMasterSpecificExtraConfig=$gtmMasterSpecificExtraConfig
 EOF
-		else
-			vecho ""
-			cat >> $configFile <<EOF
-# --- End of reconfiguration --------
-EOF
 		fi
 	fi
+	vecho ""
+	cat >> $configFile <<EOF
+# --- End of reconfiguration --------
+EOF
+	# Backup configuration file
+	pgxc_backup_config_file
 }
 
 function pgxc_init_gtm_master
@@ -2516,8 +2545,8 @@ function pgxc_failover_gtm
 		eecho ERROR: pgxc_failover_gtm: GTM slave is not available.
 		return 1
 	fi
-	vecho ssh '"'$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir '>' /dev/null '2&>1"'
-	ssh "$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir > /dev/null 2&>1"
+	doit pgxc_monitor -Z gtm -p $gtmSlavePort -h $gtmSlaveServer
+#	ssh "$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir > /dev/null 2&>1"
 	if [ $? -ne 0 ]; then
 		eecho ERROR: GTM slave is not running.
 		return 1
@@ -2552,6 +2581,8 @@ gtmSlavePort=0
 gtmSlaveDir=none
 #----End of reconfiguration -------------------------
 EOF
+	# Bacup config file
+	pgxc_backup_config_file
 	# Reconfigure myself
 	gtmMasterServer=$gtmSlaveServer
 	gtmMasterPort=$gtmSlavePort
@@ -2820,8 +2851,6 @@ function pgxc_reconnect_gtm_proxy_all
 		fi
 		pgxc_reconnect_gtm_proxy ${gtmProxyNames[$i]}
 	done
-	eecho ERROR: specified gtm_proxy is not found. $1
-	return 2
 }
 #===============================================================================
 #
@@ -3126,6 +3155,8 @@ coordMasterServers=(${coordMasterServers[@]})
 coordMasterDirs=(${coordMasterDirs[@])
 # End of update
 EOF
+			# Backup configiraiton file
+			pgxc_backup_config_file
 		fi
 	done
 }
@@ -3500,6 +3531,8 @@ coordSlaveServers=( ${coordSlaveServers[@]} )
 coordSlaveDirs=( ${coordSlaveDirs[@]} )
 # End of the update
 EOF
+			# Backup configration file
+			pgxc_backup_config_file
 		    # Update other coordinators with this new one ---> first, clean connection for all the users for all the databases
 		    # Get all the available users --> Use this coordinator to get usernam
 			# It may be better to clean connections.  However, we found that clean connection is not stable enough when some node
@@ -4342,6 +4375,8 @@ datanodeSlaveServers=( ${datanodeSlaveServers[@]} )
 datanodeSlaveDirs=( ${datanodeSlaveDirs[@]} )
 # End of the update
 EOF
+			# Backup configuraiton file
+			pgxc_backup_config_file
 			return;
 		fi
 	done
@@ -4651,7 +4686,7 @@ function pgxc_stop_something
 	fi
 	if [ "$1" == "gtm" ] || [ "$1" == "$gtmName" ]; then
 		if [ "$2" == "master" ]; then
-			pgxc_monitor -Z gtm $gtmMasterPort -h $gtmMasterServer
+			pgxc_monitor -Z gtm -p $gtmMasterPort -h $gtmMasterServer
 			if [ $? -ne 0 ]; then
 				eecho GTM master is not running. Cannot stop it.
 				return 1

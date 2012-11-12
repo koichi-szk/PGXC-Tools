@@ -1,844 +1,389 @@
-/*
- * Nov.9, Fri, Did most of value, variable and input.   Need to handle EOF more elegantly.
- */
+#include "parse.h"
+#include <getopt.h>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <errno.h>
 
-#define true 1
-#define false 0
-/*================ Common string ==========================*/
+typedef struct command_t {
+	int		background;
+	pid_t	pid;
+	int		exit_code;
+	char	*inf;
+	char	*outf;
+} command_t;
 
-static void *Malloc(size_t s)
-{
-	void *rv;
-	if ((rv = malloc(s)) == NULL)
-	{
-		fprintf(stderr, "No more memory.\n");
-		exit(1);
-	}
-	return(rv);
-}
 
-static void *Realloc(void *ptr, size_t sz)
-{
-	void *rv = realloc(ptr, sz);
-	if (rv == NULL)
-	{
-		fprintf(stderr, "No more memory.\n");
-		exit(1);
-	}
-	return(rv);
-}
-
-/*========== String ========================*/
-typedef struct strig_t {
-	int size;
-	int	len;
-	char *s;
-} string_t;
-
-static string_t *alloc_string();
-static string_t *assign_string(string_t *str, char *s);
-static string_t *cat_string(string_t *str, char *s);
-static void free_string(string_t *str);
-
-static string_t *alloc_string()
-{
-	string_t *rv = Malloc(sizeof(string_t));
-	memset(rv, 0, sizeof(string_t));
-}
-
-static string_t *assign_string(string_t *str, char *s)
-{
-	string_t *rv;
-	int l = s ? strlen(s) : 0;
-
-	if (str == NULL)
-		rv = alloc_string();
-	else
-		rv = str;
-
-	if (rv->s && (rv->size > l))
-	{
-		strcpy(rv->s, s);
-		rv->len = l;
-		return(rv);
-	}
-	if (rv->s) free(rv->s);
-	if (l < 128)
-	{
-		rv->s = Malloc(128);
-		rv->size = 128;
-	}
-	else if (l < 256)
-	{
-		rv->s = Malloc(256);
-		rv->size=256;
-	}
-	else if (l < 512)
-	{
-		rv->s = Malloc(512);
-		rv->size=512;
-	}
-	else if (l < 1024)
-	{
-		rv->s = Malloc(1024);
-		rv->size=1024;
-	}
-	else if (l < 2048)
-	{
-		rv->s = Malloc(2048);
-		rv->size = 2048;
-	}
-	else if (l < 4096)
-	{
-		rv->s = Malloc(4096);
-		rv->size = 4096;
-	}
-	else
-	{
-		fprintf(stderr, "String too long.\n");
-		exit(1);
-	}
-	rv->len = l;
-	if (s)
-		strcpy(rv->s, s);
-	return(rv);
-}
-
-static string_t *cat_string(string_t *str, char *s)
-{
-	string_t *rv;
-	int l = s ? strlen(s) : 0;
-	int total;
-
-	if (str == NULL)
-		rv = alloc_string();
-	else
-		rv = str;
-	if (rv->s == NULL)
-	{
-		return assign_string(rv, s);
-	}
-
-	total = l + str->len;
-
-	if (rv->size > total)
-	{
-		strcat(rv->s, s);
-		rv->len = total;
-		return(rv);
-	}
-	if (total < 128)
-	{
-		rv->s = Realloc(rv->s, 128);
-		rv->size = 128;
-	}
-	else if (total < 256)
-	{
-		rv->s = Realloc(rv->s, 256);
-		rv->size=256;
-	}
-	else if (total < 512)
-	{
-		rv->s = Realloc(rv->s, 512);
-		rv->size=512;
-	}
-	else if (total < 1024)
-	{
-		rv->s = Realloc(rv->s, 1024);
-		rv->size=1024;
-	}
-	else if (total < 2048)
-	{
-		rv->s = Realloc(rv->s, 2048);
-		rv->size = 2048;
-	}
-	else if (total < 4096)
-	{
-		rv->s = Realloc(rv->s, 4096);
-		rv->size = 4096;
-	}
-	else
-	{
-		fprintf(stderr, "String too long.\n");
-		exit(1);
-	}
-	rv->len = total;
-	if (s)
-		strcat(str->s, s);
-	return(rv);
-}
-
-static void free_string(string_t *str)
-{
-	free(str->s);
-	free(str);
-}
-
-/* ============= Value ================*/
-
-typedef enum vtype_t {
-	V_UNDEF = 0,
-	V_NUMERIC,
-	V_WORD,
-	V_VARIABLE,
-	V_STRING,
-	V_RAWSTRING,
-	V_ARRAY,
-	V_SPECIAL,
-	V_COMMENT,
-	V_EOF
-} vtype_t;
-
-typedef struct value_t {
-	vtype_t type;
-	union {
-		int	i_value;		/* Numeric */
-		char *w_value;		/* Word */
-		string_t *s_value;	/* String */
-		string_t *rs_value;	/* Raw string */
-		struct array_t *a_value;	/* Array */
-		char sp_value;		/* Special char */
-		char *v_value;		/* Variable: only variable name is stored here */
-	} val;
-} value_t;
-
-typedef struct arrayElement_t {
-	struct array_t *array;
-	struct arrayElement_t *next;
-	struct arrayElement_t *prev;
-	struct value_t *val;
-} arrayElement_t;
-
-typedef struct array_t {
-	arrayElement_t *head;
-	arrayElement_t *tail;
-} array_t;
-
-static void free_array(array_t *a);
-#define value_type(v) ((v)->type)
-#define ivalue(v) ((v)->val.i_value)
-#define wvalue(v) ((v)->val.w_value)
-#define svalue(v) ((v)->val.s_value)
-#define rsvalue(v) ((v)->val.rs_value)
-#define avalue(v) ((v)->val.a_value)
-#define spvalue(v) ((v)->val.sp_value)
-#define vvalue(v) ((v)->val.v_value)
-#define word_to_variable(v) ((v)->type = V_VARIABLE)
-static char *getVarStringValue(value_t *val);
-char *arrayToString(array_t *array);
-
-static int word_to_int(value_t *v)
-{
-	int i;
-
-	if (v->type != V_WORD)
-		return -1;
-	i = atoi(v->val.w_value);
-	free(v->val.w_value);
-	v->type = V_NUMERIC;
-	v->val.i_value = i;
-	return 0;
-}
-
-static value_t *alloc_val(void)
-{
-	value_t *v = Malloc(sizeof(value_t));
-	memset(v, 0, sizeof(value_t));
-	return v;
-}
-
-static void free_val(value_t *v)
-{
-	if (v == NULL)
-		return;
-	switch (v->type) {
-		case V_UNDEF:
-		case V_NUMERIC:
-		case V_SPECIAL:
-			break;
-		case V_VARIABLE:
-			free(vvalue(v));
-			break;
-		case V_STRING:
-			free_string(svalue(v));
-			break;
-		case V_RAWSTRING:
-			free_string(rsvalue(v));
-			break;
-		case V_ARRAY:
-			free_array(avalue(v));
-			break;
-		default:
-			fprintf(stderr, "Internal error. %s, %d\n", __FILE__, __LINE__);
-			exit(1);
-	}
-	free(v);
-	return;
-}
-
-
-
-
-#define isArrayEmpty(a) (((a)->head == NULL) && ((a)->tail == NULL))
-static array_t *alloc_array(void)
-{
-	array_t *rv = Malloc(sizeof(array_t));
-	rv->head = rv->tail = NULL;
-	return rv;
-}
-static arrayElement_t *append_to_array(array_t *a, value_t *v)
-{
-	if (a == NULL)
-		a = alloc_array();
-	arrayElement_t *e = Malloc(sizeof(arrayElement_t));
-	e->array = a;
-	e->next = e->prev = NULL;
-	e->val = v;
-	if (a->head == NULL)
-	{
-		a->head = a->tail = e;
-		return e;
-	}
-	a->tail->next = e;
-	e->prev = a->tail;
-	a->tail = e;
-	return e;
-}
-static arrayElement_t *append_element(arrayElement_t *e, value_t *v)
-{
-	arrayElement_t *new = Malloc(sizeof(arrayElement_t));
-	new->val = v;
-	if (e->next == NULL)
-	{
-		new->next = NULL;
-		e->next = new;
-		new->prev = e;
-		e->array->tail = new;
-	}
-	else
-	{
-		new->next = e->next;
-		new->prev = e;
-		e->next->prev = new;
-		e->next = new;
-	}
-	return new;
-}
-static arrayElement_t *insert_element(arrayElement_t *e, value_t *v)
-{
-	arrayElement_t *new = Malloc(sizeof(arrayElement_t));
-	new->val = v;
-	if (e->prev == NULL)
-	{
-		new->prev = NULL;
-		e->prev = new;
-		new->next = e;
-		e->array->head = new;
-	}
-	else
-	{
-		new->prev = e->prev;
-		new->next = e;
-		e->prev->next = new;
-		e->prev = new;
-	}
-	return new;
-}
-static arrayElement_t *remove_element(arrayElement_t *e)
-{
-	if (e == NULL)
-		return NULL;
-	if (e->prev == NULL)
-	{
-		e->array->head = e->next;
-		e->next->prev = NULL;
-	}
-	else if (e->next == NULL)
-	{
-		e->array->tail = e->prev;
-		e->prev->next = NULL;
-	}
-	else
-	{
-		e->prev->next = e->next;
-		e->next->prev = e->prev;
-	}
-	return e;
-}
-static void free_element(arrayElement_t *e)
-{
-	if (e == NULL)
-		return;
-	free_val(e->val);
-	free(e);
-}
-static void free_remove_elemnt(arrayElement_t *e)
-{
-	free_element(remove_element(e));
-}
-static void free_all_elements(arrayElement_t *e)
-{
-	if (e->next == NULL)
-		free_element(e);
-	else
-		return free_all_elements(e->next);
-	return;
-}
-static void free_array(array_t *a)
-{
-	free_all_elements(a->head);
-	free(a);
-}
-
-static char *valToString(value_t *val)
-{
-	char *rv;
-
-	switch(value_type(val)) {
-		case V_NUMERIC:
-			rv = Malloc(64);
-			sprintf(rv, "%d", ivalue(val));
-			return rv;
-		case V_WORD:
-			return strdup(wvalue(val));
-		case V_VARIABLE:
-			return strdup(vvalue(val));
-		case V_STRING:
-			return strdup(svalue(val)->s);
-		case V_RAWSTRING:
-			return strdup(rsvalue(val)->s);
-		case V_ARRAY:
-			return arrayToString(avalue(val));
-		case V_SPECIAL:
-			rv = Malloc(2);
-			rv[0] = spvalue(val);
-			rv[1] = 0;
-			return rv;
-		case V_UNDEF:
-		case V_COMMENT:
-		default:
-			return strdup("");
-	}
-}	
-
-/* ============== VARIABLE ======================*/
-	
-typedef struct variable_t {
-	struct variable_t *next;
-	char	*var_name;
-	value_t *value;
-} variable_t;
-
-static variable_t *var_head;
-static variable_t *var_tail;
-
-static variable_t *findVariable(char *name)
-{
-	variable_t *var;
-
-	for(var = var_head; var; var=var->next)
-	{
-		if (strcmp(var->var_name, name) == 0)
-			return var;
-	}
-	return NULL;
-}
-
-static void add_variable(char *name, value_t *val)
-{
-	variable_t *new = Malloc(sizeof(variable_t));
-
-	new->next = NULL;
-	new->var_name = strdup(name);
-	new->value = val;
-
-	if (var_head == NULL)
-		var_head = var_tail = new;
-	else
-	{
-		var_tail->next = new;
-		var_tail = new;
-	}
-	return;
-}
-
-static char *getVarStringValue(value_t *val)
-{
-	variable_t *variable = findVariable(vvalue(val));
-
-	return valToString(variable->value);
-}
-
-
-/* ================ INPUT ====================*/
-
-typedef struct inFile_t {
-	struct inFile_t *next;
-	FILE 	*infile;
-	int		tty;	
-} inFile_t;
-
-#define MAXLINE 2048
-
-typedef struct inputData_t {
-	char 	*line;
-	char	*cur;
-	int		len;
-	int		eof_flag;
-	inFile_t *inf;
-} inputData_t;
-
-#define Isalpha(c) (((c) & 0x80) || ((c) >= 'A' && (c)<= 'Z') || ((c) >= 'a' && (c) <= 'z') || ((c) == '_'))
-#define Isnum(c) ((c) >= '0' && (c) <= '9')
-#define cChar(d) (*((d)->cur))
-#define cPos(d) ((d)->cur)
-#define IsEOF(d) ((d)->eof_flag)
-
-
-static inputData_t *pushInputFile(inputData_t *inData, FILE *newf)
-{
-	inputData_t *ind;
-	int fd;
-	inFile_t *f;
-
-	if ((fd = fileno(newf)) == -1)
-		return NULL;
-	if (inData == NULL)
-	{
-		ind = Malloc(sizeof(inputData_t));
-		memset(ind, 0, sizeof(inputData_t));
-	}
-	else
-	{
-		ind = inData;
-		ind->cur = NULL;
-		ind->line = Malloc(MAXLINE);
-		ind->len = MAXLINE;
-	}
-	f = Malloc(sizeof(inFile_t));
-	f->next = ind->inf;
-	f->infile = newf;
-	f->tty = isatty(fd);
-	ind->inf = f;
-}
-
-static inputData_t *pushInputFileName(inputData_t *inData, char *fname)
-{
-	FILE *f;
-	f = fopen(fname, "r");
-	if (f == NULL)
-	{
-		fprintf(stderr, "Cannot open file \"%s\", %s\n", fname, strerror(errno));
-		return NULL;
-	}
-	return pushInputFile(inData, f);
-}
-
-static FILE *popInputFile(inputData_t *inData)
-{
-	inFile_t *oldf;
-
-	if (inData == NULL)
-		return NULL;
-	if (inData->inf == NULL)
-		return NULL;
-	oldf = inData->inf;
-	fclose(oldf->infile);
-	inData->inf = oldf->next;
-	free(oldf);
-	inData->cur = NULL;
-	return(inData->inf->infile);
-}
-
-static char *Gets(inputData_t *inData)
-{
-	char *rv;
-	FILE *f;
-
-	rv = fgets(inData->line, inData->len, inData->inf->infile);
-	if (rv == NULL)
-	{
-		f = popInputFile(inData);
-		if (f = NULL)
-		{
-			inData->cur = NULL;
-			inData->eof_flag = true;
-			return NULL;
-		}
-		return Gets(inData);
-	}
-	inData->cur = inData->line;
-	return rv;
-}
-
-static value_t *getVariable(inputData_t *inData);
-static value_t *getComment(inputData_t *inData);
-static value_t *getRawString(inputData_t *inData);
-static value_t *getString(inputData_t *inData);
-static value_t *getWord(inputData_t *inData);
-static value_t *getArray(inputData_t *inData);
-static value_t *getSpecial(inputData_t *inData);
-
-static value_t *getValue(inputData_t *inData)
-{
-	for(; cChar(inData) == ' ' || cChar(inData) == '\t'; inData->cur++);
-	if (cChar(inData) == '\0' || cChar(inData) == '\n')
-		return NULL;
-	/* Test the first character */
-	if (cChar(inData) == '$')
-	{
-		cPos(inData)++;
-		return(getVariable(inData));
-	}
-	if (cChar(inData) == '#')
-		return(getComment(inData));
-	if (cChar(inData) == '\'')
-	{
-		cPos(inData)++;
-		return(getRawString(inData));
-	}
-	if (cChar(inData) == '"')
-	{
-		cPos(inData)++;
-		return(getString(inData));
-	}
-	if (Isalpha(cChar(inData)) || Isnum(cChar(inData)))
-		return(getWord(inData));
-	if (cChar(inData) == '(')
-		return(getArray(inData));
-	else
-		return(getSpecial(inData));
-}
-
-static void skipTo(inputData_t *inData, char to, int detect_comment)
-{
-	char *cur;
-	if (detect_comment)
-	{
-		for (cur = cPos(inData); *cur && *cur != to && *cur != '#'; cur++);
-		if ((*cur == '\0') || (*cur == '#'))
-		{
-			Gets(inData);
-			if (!IsEOF(inData))
-				skipTo(inData, to, detect_comment);
-			return;
-		}
-		else
-		{
-			cPos(inData) = cur;
-			return;
-		}
-	}
-	else
-	{
-		for (cur = cPos(inData); *cur && *cur != to; cur++);
-		if (*cur == '\0')
-		{
-			Gets(inData);
-			return skipTo(inData, to, detect_comment);
-		}
-		else
-		{
-			cPos(inData) = cur;
-			return;
-		}
-	}
-}
-
-static value_t *getVariable(inputData_t *inData)
-{
-	value_t *rv;
-	if (cChar(inData) == '(')
-		cPos(inData)++;
-	rv = getWord(inData);
-	if (cChar(inData) != ')')
-		skipTo(inData, ')', true);
-	word_to_variable(rv);
-	return rv;
-}
-
-static value_t *getWord(inputData_t *inData)
-{
-	value_t *rv;
-	char bkup;
-	char *start = inData->cur;
-	char *tail;
-
-	rv = alloc_val();
-	value_type(rv) = V_WORD;
-	for(tail = start; Isalpha(*tail) || Isnum(*tail); tail++);
-	bkup = *tail;
-	*tail = '\0';
-	wvalue(rv) = strdup(start);
-	*tail = bkup;
-	inData->cur = tail;
-	return(rv);
-}
-
-static value_t *getComment(inputData_t *inData)
-{
-	value_t *rv = alloc_val();
-
-	rv->type = V_COMMENT;
-	Gets(inData);
-	return rv;
-}
-
-static value_t *appendRawString(value_t *rv, inputData_t *inData);
-
-static value_t *getRawString(inputData_t *inData)
-{
-	value_t *rv = alloc_val();
-	string_t *str = alloc_string();
-	char bkup;
-
-	char *start = cPos(inData);
-	char *tail;
-
-	value_type(rv) = V_RAWSTRING;
-	for(tail = start; *tail != '\'' && *tail != '\n' && *tail != '\0'; tail++);
-	if (*tail == '\'')
-	{
-		bkup = *tail;
-		*tail = '\0';
-		str = assign_string(str, start);
-		*tail = bkup;
-		rsvalue(rv) = str;
-		cPos(inData) = tail + 1;
-		return(rv);
-	}
-	if (*tail == '\n')
-		*tail = '\0';
-	str = assign_string(str, start);
-	Gets(inData);
-	return appendRawString(rv, inData);
-}
-
-static value_t *appendRawString(value_t *rv, inputData_t *inData)
-{
-	string_t *str = rsvalue(rv);
-	char *start = cPos(inData);
-	char *tail;
-	char bkup;
-
-	for (tail = start; *tail != '\'' && *tail != '\n'  && *tail != '\0'; tail++);
-	bkup = *tail;
-	*tail = '\0';
-	str = cat_string(str, start);
-	*tail = bkup;
-	if (*tail == '\'')
-	{
-		cPos(inData) = tail + 1;
-		return(rv);
-	}
-	if (*tail == '\n')
-		*tail = '\0';
-	str = cat_string(str, start);
-	Gets(inData);
-	return appendRawString(rv, inData);
-}
-
-static value_t *appendString(value_t *rv, inputData_t *inData);
-
-static value_t *getString(inputData_t *inData)
-{
-	value_t *rv = alloc_val();
-	string_t *str = alloc_string();
-	value_t *varInStr;
-
-	char *start = cPos(inData);
-	char *tail;
-	char bkup;
-
-	value_type(rv) = V_STRING;
-	for (tail = start; *tail != '"' && *tail != '\n' && *tail != '\0' && *tail != '$'; tail++);
-	if (*tail == '"')
-	{
-		bkup = *tail;
-		*tail = '\0';
-		str = assign_string(str, start);
-		*tail = bkup;
-		rsvalue(rv) = str;
-		cPos(inData) = tail + 1;
-		return(rv);
-	}
-	bkup = *tail;
-	*tail = '\0';
-	str = assign_string(str, start);
-	*tail = bkup;
-	cPos(inData) = tail;
-	if (*tail == '\n' || *tail == '\0')
-		Gets(inData);
-	return appendString(rv, inData);
-}
-
-static value_t *appendString(value_t *rv, inputData_t *inData)
-{
-	string_t *str = svalue(rv);
-	char *start = cPos(inData);
-	char *tail;
-	char bkup;
-	value_t *varVar;
-	char *varStringVar;
-
-	for (tail = start; *tail != '"' && *tail != '\n' && *tail != '\0' && *tail != '$'; tail++);
-	bkup = *tail;
-	*tail = '\0';
-	str = cat_string(str, start);
-	*tail = bkup;
-	if (*tail == '$')
-	{
-		cPos(inData)++;
-		varVar = getVariable(inData);
-		varStringVar = getVarStringValue(varVar);
-		str = cat_string(str, varStringVar);
-		free(varStringVar);
-		return appendString(rv, inData);
-	}
-	if (*tail == '"')
-	{
-		cPos(inData) = tail + 1;
-		return rv;
-	}
-	Gets(inData);
-	return appendString(rv, inData);
-}
-
-static value_t *getSpecial(inputData_t *inData)
-{
-	value_t *rv = alloc_val();
-
-	value_type(rv) = V_SPECIAL;
-	spvalue(rv) = cChar(inData);
-	cPos(inData)++;
-	return(rv);
-}
-
-static value_t *getArray(inputData_t *inData)
-{
-	value_t *rv = alloc_val();
-	value_t *element;
-	array_t *array;
-
-	value_type(rv) = V_ARRAY;
-	avalue(rv) = array = alloc_array();
-	while (element = getValue(inData), value_type(element) != V_EOF && (value_type(element) != V_SPECIAL || spvalue(element) != ')'))
-		append_to_array(array, element);
-}
-
-/*------------------- MAIN ------------------------------*/
-
+/* For general input */
 inputData_t *inputData = NULL;
 
+/* Log File */
+FILE *logf = NULL;
+
+static void do_init();
+#define cmdname(c) wvalue(elementVal(arrayElement_((c), 0)))
+
+/*
+ * Synopsis
+ *
+ * pgxc_ctl []options ....] [file ....]
+ *
+ * Options
+ *
+ * -f file: input from file, not fom stdin.
+ * -c config file: configuration file.   Default is $HOME/pgxc/pgxcConf
+ * -v, --verbose : Verbose mode.  Default
+ * -S, --silent : Silent mode.
+ * -V, --version : Prints version, then exit.
+ * -h, --help : Prints help, then exit.
+ * --with-log: Write log.   Default.
+ * --without-log: Do not write log.
+ *
+ * If no file nor -f option is specified, then command will be read from the terminal or stdin.
+ */
 main(int argc, char *argv[])
 {
-	inputData = pushInputFile(inputData, stdin);
-	do_command();
+	int c;
+
+	char *verbose_opt = NULL;
+	char *file_opt = NULL;
+	char *log_opt = NULL;
+	char *conf_file = NULL;
+	char buf[1024];
+
+	static struct option long_options[] = {
+		{"silent",	no_argument, 0, 's'},
+		{"verbose", no_argument, 0, 'v'},
+		{"version", no_argument, 0, 'V'},
+		{"help", no_argument, 0, 'h'},
+		{"with-log", no_argument, 0, 1},
+		{"without-log", no_argument, 0, 2}
+	};
+
+	do_minimum_init();
+	while (1) {
+		int option_index;
+
+		c = getopt_long(argc, argv, "f:c:vSVh",
+						long_options, &option_index);
+		switch(c) {
+			case 'f':
+				if (file_opt)
+					free(file_opt);
+				file_opt = strdup(optarg);
+				break;
+			case 'c':
+				if (conf_file)
+					free(conf_file);
+				conf_file = strdup(optarg);
+				break;
+			case 's':
+				if (verbose_opt)
+					free(verbose_opt);
+				verbose_opt = strdup("off");
+				break;
+			case 'v':
+				if (verbose_opt)
+					free(verbose_opt);
+				verbose_opt = strdup("on");
+				break;
+			case 'V':
+				print_version();
+				exit(0);
+			case 'h':
+				print_help();
+				exit(0);
+			case 1:
+				if (log_opt)
+					free(log_opt);
+				log_opt = strdup("on");
+				break;
+			case 2:
+				if (log_opt)
+					free(log_opt);
+				log_opt = strdup("off");
+				break;
+			default:
+				fprintf(stderr, "?? getopt returned character code 0x%x ??\n", c);
+		}
+	}
+	if (conf_file)
+		read_config(conf_file);
+	else
+	{
+		sprintf(buf, "%s/pgxc/pgxcConf", getenv("HOME"));
+		read_config(buf);
+	}
+	
 }
 
+void do_minimum_init(void)
+{
+	char buf[1024];
+	variable_t *variable;
+	/*
+	 * Initialize set of variables
+	 */
+	/* HOME */
+	add_variable("HOME", makeWordValue(getenv("HOME")));
+	add_variable("USER", makeWordValue(getenv("USER")));
+}
+
+static int cmd_end(value_t *token);
+
+void read_config(char *conff)
+{
+	inputData_t configInput = NULL;
+	array_t *cmd = NULL;
+	value_t *token = NULL;
+	
+	confInput = pushInputFileName(configInput, conff);
+	while (1)
+	{
+		if (cmd)
+			free_array(cmd);
+		for (token = getValue(configInput); ;token = getValue(configInput))
+		{
+			cmd = append_to_array(cmd, token);
+			if (cmd_end(token))
+			{
+				makeArrayIndex(cmd);
+				do_command(cmd, false);
+				if (configInput->inf->eof_flag)
+					return;
+				else
+					continue;
+			}
+		}
+	}
+}
+
+static int cmd_end(value_t *token)
+{
+	if (value_type(token) == V_EOL || value_type(token) == V_EOF || value_type(token) == V_COMMENT)
+		return true;
+	if (value_type(token) == V_SPECIAL && spvalue(token) == ';')
+		return true;
+	return false;
+}
+
+/*
+ * background -> specified command should run as backgroud, then
+ * sync termination with syn_command.  Otherwise, waits until the
+ * command is done, set exit code and then returns.
+ *
+ * If interactive is false, it does not echo any prompt to the terminal.
+ * No output will be written to the terminal.
+ * Mainly done at initialization/configuration time.
+ */
+command_t *do_command(array_t *cmd, int bg_opt)
+{
+	int ii;
+	command_t *rv;
+
+	cmd = trimLastIfNeeded(cmd);
+	log_command(cmd);
+	ii = arraySize(cmd);
+	if (ii == 0) return NULL;
+	if (!isCmdName(arrayElement_(cmd, 0)))
+	{
+		/* Error */ 
+		error();
+	}
+	if (ii == 3 && value_type(elementVal(arrayElement_(cmd, 1))) == V_SPECIAL && spvalue(elementVal(arrayElement_(cmd, 1))) == '=')
+	{
+		/* Assign command is always done in foreground */
+		rv = do_assign_cmd(cmd);
+	}
+	else if (strcmp(cmdname(cmd), "cd") == 0)
+	{
+		/* cd is also done in foreground */
+		rv = do_cd_cmd(cmd);
+	}
+	else if (strcmp(cmdname(cmd), "echo") == 0)
+	{
+		/* Echo is done in foreground */
+		rv = do_echo_cmd(cmd);
+	}
+	else
+	{
+		/* General command */
+		rv = do_command(cmd, bg_opt);
+	}
+	free_array(cmd);
+	return rv;
+}
+
+
+command_t *do_assign_cmd(array_t *cmd)
+{
+	command_t *rv = Malloc(sizeif(command_t));
+
+	assignVariableByName(wvalue(elementVal(arrayElement_(cmd, 0))), elementVal(arrayElement_(cmd, 2)));
+	memcpy(rv, 0, sizeof(command_t));
+	return(rv);
+}
+
+command_t *do_cd_cmd(array_t *cmd)
+{
+	int ii = arraySize(cmd);
+	int rc;
+	arrayElement_t *e;
+	command_t *rv = Malloc(sizeof(command_t));
+
+	if (ii != 2)
+		/* size error */
+		error();
+	switch (value_type(elementVal(arrayElement_(cmd, 1)))) {
+		case V_UNDEF:
+		case V_NUMERIC:
+		case V_SPECIAL:
+		case V_ARRAY:
+			/* Error */
+			error();
+			break;
+		default:
+			convertElementToWord(arrayElement_(cmd, 1));
+			rc = chdir(wvalue(arrayVal(arrayElement_(cmd, 1))));
+			if (rc < 0)
+			{
+				/* Error */
+				error();
+			}
+	}
+	rv->background = false;
+	rv->pid = 0;
+	rv->exit_code = rc ? 1 : 0;
+	rv->inf = rv->outf = NULL;
+	return(rv);
+}
+
+/* 
+ * Echo will also be written to the log.  No -n option supported.
+ */
+command_t *do_echo_cmd(array_t *cmd)
+{
+	arrayElement_t *e;
+	for (e = arrayElement(cmd, 1); e; e = e->next)
+	{
+		echo_value(elementVal(e));
+		echo_string(" ");
+	}
+	echo_string("\n");
+}
+
+void echo_value(value_t *v)
+{
+	char buf[128];
+
+	if (v == NULL)
+		return;
+	switch(value_type(v)) {
+		case V_UNDEF:
+		case V_COMMENT:
+			return;
+		case V_NUMERIC:
+			sprintf(buf, "%d", ivalue(v));
+			echo_string(buf);
+			return;
+		case V_WORD:
+			echo_string(wvalue(v));
+			return;
+		case V_STRING:
+			echo_string("\"");
+			echo_string(svalue(v));
+			echo_string("\"");
+			return;
+		case V_RAWSTRING:
+			echo_string("'");
+			echo_string(rsvalue(v));
+			echo_string("'");
+			return;
+		case V_VARIABLE:
+			echo_value(findVariable(vvalue(v))->value);
+			return;
+		case V_ARRAY:
+			echo_array(avalue(v));
+			return;
+		case V_SPECIAL:
+			buf[0] = spvalue(v);
+			buf[1] = 0;
+			echo_string(buf);
+			return;
+		default:
+			/* Internal error */
+			return;
+	}
+}
+
+void echo_array(array_t *a)
+{
+	arrayElement_t *e;
+	echo_string("(");
+	for (e = a->head; e; e = e->next)
+	{
+		echo_value(e->val);
+	}
+	echo_string(")");
+	return;
+}
+
+void log_command(array_t *cmd)
+{
+	arrayElement_t *e;
+	for (e = a->head; e; e = e->next)
+	{
+		log_value(e->val);
+	}
+	return;
+}
+
+echo_string(char *s)
+{
+	fputs(stdout, s);
+	if (logf)
+		fputf(logf, s);
+}
+
+
+void sync_command(command_t *cmd)
+{
+	if (cmd->background == false)
+		return;
+	
+}
+
+int isCmdName(arrayElement_t *e)
+{
+	switch (value_type(elementVal(e))) {
+		case V_UNDEF:
+		case V_SPECIAL:
+		case V_ARRAY:
+		case V_NUMERIC:
+			return false;
+		default:
+			convertElementToWord(e);
+			return true;
+	}
+}
+
+void trimLastIfNeeded(array_t *cmd)
+{
+	int sz = arrayAize(cmd);
+	arrayElement_t *e;
+
+	e = arrayElement_(cmd, sz - 1);
+	switch (value_type(elementVal(e))) {
+		case V_UNDEF:
+		case V_EOL:
+		case V_EOF:
+		case V_COMMENT:
+			free_remove_element(e);
+			return;
+		case V_SPECIAL:
+			if (sp_value(elementVal(e)) == ';')
+			{
+				free_remove_element(e);
+				return;
+			}
+		default:
+			return;
+	}
+}
