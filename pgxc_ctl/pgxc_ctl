@@ -2529,8 +2529,8 @@ function pgxc_kill_gtm_slave
 		eecho ERROR: GTM slave is not configured.
 		return 1
 	fi
-	vecho ssh $pgxcUser@$gtmSlaveServer '"'killall -u $pgxcUser -9 gtm '>'/dev/null '2&>1"'
-	ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcUser -9 gtm >/dev/null 2&>1"
+	vecho ssh $pgxcUser@$gtmSlaveServer '"'killall -u $pgxcUser -9 gtm '>'/dev/null '2>&1"'
+	ssh $pgxcUser@$gtmSlaveServer "killall -u $pgxcUser -9 gtm >/dev/null 2>&1"
 	pgxc_clean_socket $gtmSlaveServer $gtmSlavePort
 }
 
@@ -2546,15 +2546,15 @@ function pgxc_failover_gtm
 		return 1
 	fi
 	doit pgxc_monitor -Z gtm -p $gtmSlavePort -h $gtmSlaveServer
-#	ssh "$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir > /dev/null 2&>1"
+#	ssh "$pgxcUser@$gtmSlaveServer gtm_ctl status -Z gtm -D $gtmSlaveDir > /dev/null 2>&1"
 	if [ $? -ne 0 ]; then
 		eecho ERROR: GTM slave is not running.
 		return 1
 	fi
 	# STONITH GTM Master
 	# Please note that master and slave should run on different server.
-	vecho $pgxcUser@$gtmMasterServer '"'killall -u $pgxcOwner -9 gtm '>'/dev/null '2>&1"'
-	ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcOwner -9 gtm >/dev/null 2>&1"
+#	vecho $pgxcUser@$gtmMasterServer '"'killall -u $pgxcOwner -9 gtm '>'/dev/null '2>&1"'
+#	ssh $pgxcUser@$gtmMasterServer "killall -u $pgxcOwner -9 gtm >/dev/null 2>&1"
 	doit ssh $pgxcUser@$gtmSlaveServer gtm_ctl promote -Z gtm -D $gtmSlaveDir
 	# Update GTM configuration file as the master
 	vecho Reconfigure GTM as Master
@@ -3004,8 +3004,8 @@ function pgxc_start_coordinator_master
 	local i
 	for ((i=0; i< ${#coordNames[@]}; i++));	do
 		if [ $1 == ${coordNames[$i]} ]; then
-			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2&>1'
-			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2>&1'
+			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -eq 0 ]; then
 				eecho ERROR: target coordinator master is running now.
 				return 1
@@ -3190,8 +3190,8 @@ function pgxc_init_coordinator_slave
 				return 1
 			fi
 		    # Coordinator master should be running
-			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2&>1'
-			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2>&1'
+			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -ne 0 ]; then
 				start_master=y
 			fi
@@ -3255,8 +3255,8 @@ function pgxc_init_coordinator_slave_all
 	fi
 	for ((i=0;i<${#coordNames[@]};i++)); do
 		if [ ${coordNames[$i]} != none ] && [ ${coordNames[$i]} != N/A ]; then
-			log_echo psql -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2&>1'
-			psql -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2>&1'
+			psql -p ${coordPorts[$i]} -h ${coordSlaveServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -eq 0 ]; then
 				eecho Coordinator slave "("${coordNames[$i]}")" is already running.
 				return 1
@@ -3286,8 +3286,8 @@ function pgxc_start_coordinator_slave
 				return 1
 			fi
 		  	# Coordinator master should be running
-			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2&>1'
-			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2>&1'
+			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -ne 0 ]; then
 				eecho ERROR: corresponding coordinator master is not running now, $1
 				return 1
@@ -3356,8 +3356,8 @@ function pgxc_stop_coordinator_slave
 				return 1
 			fi
 			# If the master is running, master's switch replication to asynchronous mode.
-			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2&>1'
-			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2>&1'
+			psql -p ${coordPorts[$i]} -h ${coordMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -eq 0 ]; then
 			    # Switch Master to asynchronous mode.
 				vecho Switching master of $1 at ${coordMasterServer[$i]} to asynchronous replication mode.
@@ -3749,8 +3749,8 @@ function pgxc_start_datanode_master
 	local i
 	for ((i=0; i< ${#datanodeNames[@]}; i++)); do
 		if [ $1 == ${datanodeNames[$i]} ]; then
-			log_echo psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2&>1'
-			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2>&1'
+			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -eq 0 ]; then
 				eecho ERROR: target datanode master is running now.
 				return 1
@@ -3881,8 +3881,8 @@ function pgxc_init_datanode_slave
 				return 1
 			fi
 		    # Datanode master should be running
-			log_echo psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null 2&>1
-			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null 2>&1
+			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -ne 0 ]; then
 				start_master=y
 			fi
@@ -3966,14 +3966,14 @@ function pgxc_start_datanode_slave
 				return 1
 			fi
 		    # Datanode master should be running
-			log_echo psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2&>1'
-			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2&>1
+			log_echo psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c \'select 1\' '>' /dev/null '2>&1'
+			psql -p ${datanodePorts[$i]} -h ${datanodeMasterServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -ne 0 ] ; then
 				eecho ERROR: corresponding datanode master is not running now, $1
 				return 1
 			fi
 		    # Start the slave
-			psql -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2> /dev/null
+			psql -p ${datanodePorts[$i]} -h ${datanodeSlaveServers[$i]} postgres $pgxcOwner -c 'select 1' > /dev/null 2>&1
 			if [ $? -eq 0 ] ; then
 				eecho ERROR: datanode slave "("${datanodeNames[$i]}")" is already running
 				return 1
