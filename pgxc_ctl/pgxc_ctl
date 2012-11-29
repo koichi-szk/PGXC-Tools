@@ -2394,8 +2394,8 @@ EOF
 	# many XID's involved.  This is a dirty hack and should be corrected by running initdb with
 	# gtm, or gtm can correct what GXID to start with from all the nodes.
 	vecho Initializing starting GXID value...
-	vecho 	'('ssh $pgxcUser@$gtmMasterServer gtm -x 1000 -D $gtmMasterDir '&)'
-	(ssh $pgxcUser@$gtmMasterServer gtm -x 1000 -D $gtmMasterDir &)
+	vecho 	'('ssh $pgxcUser@$gtmMasterServer gtm -x 2000 -D $gtmMasterDir '&)'
+	(ssh $pgxcUser@$gtmMasterServer gtm -x 2000 -D $gtmMasterDir &)
 	sleep 1
 	vecho ssh $pgxcUser@$gtmMasterServer '"'gtm_ctl stop -Z gtm -D $gtmMasterDir '>' /dev/null '2>&1"'
 	ssh $pgxcUser@$gtmMasterServer "gtm_ctl stop -Z gtm -D $gtmMasterDir > /dev/null 2>&1"
@@ -2629,7 +2629,7 @@ function pgxc_init_gtm_proxy
 			ssh $pgxcUser@${gtmProxyServers[$i]} "cat >> ${gtmProxyDirs[$i]}/gtm_proxy.conf" <<EOF
 nodename = '${gtmProxyNames[$i]}'
 listen_addresses = '*'
-port = '${gtmProxyPorts[$i]}'
+port = ${gtmProxyPorts[$i]}
 gtm_host = $gtmMasterServer
 gtm_port = $gtmMasterPort
 worker_threads = 1
