@@ -4000,7 +4000,7 @@ EOF
 
 function pgxc_start_datanode_slave_all
 {
-	log_eco pgxc_start_datanode_slave_all'('$*')'
+	log_ehco pgxc_start_datanode_slave_all'('$*')'
     vecho ================================================================
     vecho Start all the datanode slaves
 
