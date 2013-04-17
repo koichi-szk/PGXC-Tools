@@ -4563,7 +4563,7 @@ function pgxc_start_something
 		start_all
 		return
 	fi
-	if [ "$1" == "gtm" ] || [ "$1" == "$gtmName"]; then
+	if [ "$1" == "gtm" ] || [ "$1" == "$gtmName" ]; then
 		if [ "$2" == "master" ]; then
 			pgxc_monitor -Z gtm $gtmMasterPort -h $gtmMasterServer
 			if [ $? -eq 0 ]; then
